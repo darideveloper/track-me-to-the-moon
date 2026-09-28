@@ -13,21 +13,33 @@ python -m worktracker --once        # one poll print, no UI
 python -m worktracker               # Flet window: live timer, Start/Stop, last 10 sessions
 ```
 
-Config: `~/.config/worktracker/config.toml` (auto-created with defaults).
-Data: `~/.local/share/worktracker/tracker.db`, shots under `~/.local/share/worktracker/shots/`.
+Config, data, and shots dirs are auto-created on first start.
+
+- Linux: `~/.config/worktracker/config.toml`, `~/.local/share/worktracker/tracker.db`, shots under `~/.local/share/worktracker/shots/YYYY-MM-DD/`
+- macOS: same as Linux (`~/.config/...`, `~/.local/share/...`)
+- Windows: `%USERPROFILE%\.config\worktracker\config.toml`, `%USERPROFILE%\.local\share\worktracker\tracker.db`, shots under `%USERPROFILE%\.local\share\worktracker\shots\YYYY-MM-DD\`
+
+`$XDG_CONFIG_HOME` / `$XDG_DATA_HOME` ( `%XDG_CONFIG_HOME%` / `%XDG_DATA_HOME%` on Windows) override the defaults when set.
+
+## Settings
+
+Identity and API settings (`api_base`, `api_token`, `user_id`) live in the
+database (`settings` table in `tracker.db`) and are edited from the ⚙
+settings screen in the Flet window (Save validates: `api_base` must be an
+`http(s)` URL, token and employee ID non-empty; tracking can't Start until
+valid). The token shows as `••••` after save and changes only via Change.
+Leftover copies of those keys in old `config.toml` files are ignored.
+Deleting `tracker.db` resets settings. Timing intervals stay in `config.toml`.
 
 ## Config keys
 
 ```toml
-api_base = ""
-api_token = ""
-user_id = ""
 screenshot_interval_sec = 300
 poll_interval_sec = 5
 idle_after_sec = 180
 ```
 
-If `api_base` is empty, uploader just keeps queue (offline mode).
+If no `api_base` is stored in settings, uploader just keeps queue (offline mode).
 
 ## Permissions
 

@@ -1,5 +1,7 @@
 from worktracker import store
 
+import pytest
+
 
 def test_session_roundtrip(tmp_path):
     con = store.connect(tmp_path / "t.db")
@@ -34,3 +36,49 @@ def test_list_sessions_open_session(tmp_path):
     assert rows[0][2] is None  # ended_at NULL while recording
     assert store.list_sessions(con, 1) == rows
     con.close()
+
+
+def test_settings_table_autocreates_on_old_db(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "old.db"  # pre-settings schema: sessions only
+    con0 = sqlite3.connect(str(db))
+    con0.execute("CREATE TABLE sessions(id INTEGER PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT)")
+    con0.execute("INSERT INTO sessions(started_at) VALUES ('2026-01-01T00:00:00+00:00')")
+    con0.commit()
+    con0.close()
+    con = store.connect(db)
+    assert store.get_settings_dict(con) == {"api_base": "", "api_token": "", "user_id": ""}
+    assert con.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 1
+    con.close()
+
+
+def test_settings_roundtrip_trims(tmp_path):
+    con = store.connect(tmp_path / "t.db")
+    store.set_setting(con, "user_id", "  emp-042  ")
+    assert store.get_setting(con, "user_id") == "emp-042"
+    store.set_setting(con, "user_id", "emp-043")
+    assert store.get_setting(con, "user_id") == "emp-043"
+    con.close()
+
+
+def test_settings_missing_key_reads_empty(tmp_path):
+    con = store.connect(tmp_path / "t.db")
+    assert store.get_setting(con, "api_token") == ""
+    con.close()
+
+
+def test_settings_unknown_key_rejected(tmp_path):
+    con = store.connect(tmp_path / "t.db")
+    with pytest.raises(ValueError):
+        store.set_setting(con, "nope", "x")
+    with pytest.raises(ValueError):
+        store.get_setting(con, "nope")
+    con.close()
+
+
+def test_validate_settings(tmp_path):
+    assert store.validate_settings(
+        {"api_base": "https://api.example.com", "api_token": "s", "user_id": "e"}) == {}
+    bad = store.validate_settings({"api_base": "not-a-url", "api_token": " ", "user_id": ""})
+    assert set(bad) == {"api_base", "api_token", "user_id"}

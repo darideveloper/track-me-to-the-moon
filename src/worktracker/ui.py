@@ -66,12 +66,103 @@ def main(page: ft.Page) -> None:
     start_btn = ft.FilledButton("Start")
     stop_btn = ft.OutlinedButton("Stop", disabled=True)
     history = ft.ListView(expand=True, spacing=4)
+    settings_hint = ft.Text("Settings incomplete — open ⚙ to finish setup.",
+                            size=12, visible=False, color=ft.Colors.AMBER)
+    gear_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings")
+
+    def current_settings() -> dict:
+        return store.get_settings_dict(con)
+
+    def refresh_hint() -> None:
+        settings_hint.visible = bool(store.validate_settings(current_settings()))
+
+    base_field = ft.TextField(label="API base URL", hint_text="https://api.example.com",
+                              dense=True)
+    user_field = ft.TextField(label="Employee ID", dense=True)
+    token_field = ft.TextField(label="API token", password=True,
+                               can_reveal_password=False, dense=True)
+    token_change_btn = ft.OutlinedButton("Change")
+    save_btn = ft.FilledButton("Save")
+    back_btn = ft.TextButton("‹ Back")
+    settings_msg = ft.Text("", size=12)
+    token_state = {"editing": True}
+
+    def refresh_settings() -> None:
+        s = current_settings()
+        base_field.value = s["api_base"]
+        base_field.error_text = None
+        user_field.value = s["user_id"]
+        user_field.error_text = None
+        token_field.error_text = None
+        if s["api_token"]:
+            token_state["editing"] = False
+            token_field.value = "•" * 8
+            token_field.disabled = True
+            token_change_btn.visible = True
+        else:
+            token_state["editing"] = True
+            token_field.value = ""
+            token_field.disabled = False
+            token_change_btn.visible = False
+        settings_msg.value = ""
+
+    def show_settings(_=None) -> None:
+        refresh_settings()
+        home_view.visible = False
+        settings_view.visible = True
+        page.update()
+
+    def show_home(_=None) -> None:
+        settings_view.visible = False
+        home_view.visible = True
+        refresh_hint()
+        page.update()
+
+    def on_token_change(_=None) -> None:
+        token_state["editing"] = True
+        token_field.value = ""
+        token_field.disabled = False
+        token_field.error_text = None
+        token_change_btn.visible = False
+        page.update()
+
+    def on_save(_=None) -> None:
+        base = (base_field.value or "").strip()
+        user = (user_field.value or "").strip()
+        token = ((token_field.value or "").strip() if token_state["editing"]
+                 else store.get_setting(con, "api_token"))
+        errors = store.validate_settings(
+            {"api_base": base, "api_token": token, "user_id": user})
+        base_field.error_text = errors.get("api_base")
+        user_field.error_text = errors.get("user_id")
+        token_field.error_text = errors.get("api_token")
+        if errors:
+            settings_msg.value = "Fix the highlighted fields."
+            page.update()
+            return
+        store.set_setting(con, "api_base", base)
+        store.set_setting(con, "user_id", user)
+        if token_state["editing"]:
+            store.set_setting(con, "api_token", token)
+        refresh_settings()
+        refresh_hint()
+        settings_msg.value = "Saved ✓"
+        page.update()
+
+    gear_btn.on_click = show_settings
+    back_btn.on_click = show_home
+    token_change_btn.on_click = on_token_change
+    save_btn.on_click = on_save
+
+    home_view = ft.Column([], visible=True)
+    settings_view = ft.Column([], visible=False)
 
     def refresh_history() -> None:
         history.controls.clear()
         for _sid, started_at, ended_at in store.list_sessions(con, 10):
             title, subtitle = format_session_row(started_at, ended_at)
             history.controls.append(ft.ListTile(title=title, subtitle=subtitle, dense=True))
+        refresh_hint()
         try:
             page.update()
         except Exception:
@@ -85,6 +176,10 @@ def main(page: ft.Page) -> None:
 
     def on_start(_=None) -> None:
         if state["running"]:
+            return
+        if store.validate_settings(current_settings()):
+            status_text.value = "Set up settings first (⚙)"
+            show_settings()
             return
         timer_label.value = "00:00:00"
         ts = _now()
@@ -132,23 +227,36 @@ def main(page: ft.Page) -> None:
             pass
 
     page.on_close = on_close
-    page.add(
-        ft.Column(
-            [
-                timer_label,
-                ft.Row([status_dot, status_text],
-                       alignment=ft.MainAxisAlignment.CENTER),
-                ft.Row([start_btn, stop_btn],
-                       alignment=ft.MainAxisAlignment.CENTER),
-                ft.Divider(),
-                ft.Text("Last tracked times"),
-                history,
-            ],
-            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-            scroll=ft.ScrollMode.ADAPTIVE,
-            expand=True,
-        )
-    )
+    home_view.controls = [
+        ft.Row([gear_btn], alignment=ft.MainAxisAlignment.START),
+        timer_label,
+        ft.Row([status_dot, status_text],
+               alignment=ft.MainAxisAlignment.CENTER),
+        settings_hint,
+        ft.Row([start_btn, stop_btn],
+               alignment=ft.MainAxisAlignment.CENTER),
+        ft.Divider(),
+        ft.Text("Last tracked times"),
+        history,
+    ]
+    home_view.horizontal_alignment = ft.CrossAxisAlignment.CENTER
+    home_view.scroll = ft.ScrollMode.ADAPTIVE
+    home_view.expand = True
+    settings_view.controls = [
+        ft.Row([back_btn, ft.Text("Settings", weight=ft.FontWeight.BOLD)],
+               alignment=ft.MainAxisAlignment.START),
+        base_field,
+        user_field,
+        token_field,
+        ft.Row([token_change_btn], alignment=ft.MainAxisAlignment.END),
+        ft.Row([save_btn], alignment=ft.MainAxisAlignment.CENTER),
+        settings_msg,
+    ]
+    settings_view.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
+    settings_view.scroll = ft.ScrollMode.ADAPTIVE
+    settings_view.expand = True
+    page.add(home_view, settings_view)
+    refresh_hint()
     refresh_history()
     page.run_task(ticker)
 

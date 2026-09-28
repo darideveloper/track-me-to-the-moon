@@ -9,13 +9,16 @@ from . import api
 
 
 def loop(con, cfg: dict, stop: threading.Event) -> None:
+    from . import store
+
     backoff = 60
     while not stop.wait(backoff):
         try:
             if _drain(con, cfg):
                 backoff = 60
             else:
-                backoff = min(backoff * 2, 900) if cfg.get("api_base") else 60
+                base = store.get_setting(con, "api_base")
+                backoff = min(backoff * 2, 900) if base else 60
         except Exception:
             backoff = min(backoff * 2, 900)
 
@@ -23,7 +26,8 @@ def loop(con, cfg: dict, stop: threading.Event) -> None:
 def _drain(con, cfg: dict) -> bool:
     from . import store
 
-    base, token = cfg.get("api_base", ""), cfg.get("api_token", "")
+    s = store.get_settings_dict(con)
+    base, token = s.get("api_base", ""), s.get("api_token", "")
     if not base:
         return True  # offline mode: nothing to do, keep queue
     rows = store.pending_screenshots(con, 20)
@@ -34,7 +38,7 @@ def _drain(con, cfg: dict) -> bool:
         try:
             ok = api.post_screenshot(
                 base, token,
-                {"user_id": cfg.get("user_id", ""), "session_id": session_id, "ts": ts},
+                {"user_id": s.get("user_id", ""), "session_id": session_id, "ts": ts},
                 path,
             )
         except Exception:

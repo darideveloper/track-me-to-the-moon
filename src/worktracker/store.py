@@ -9,7 +9,10 @@ PRAGMA journal_mode=WAL;
 CREATE TABLE IF NOT EXISTS sessions(id INTEGER PRIMARY KEY, started_at TEXT NOT NULL, ended_at TEXT);
 CREATE TABLE IF NOT EXISTS activities(id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, ts TEXT NOT NULL, app TEXT, title TEXT, idle INTEGER DEFAULT 0);
 CREATE TABLE IF NOT EXISTS screenshots(id INTEGER PRIMARY KEY, session_id INTEGER NOT NULL, ts TEXT NOT NULL, path TEXT NOT NULL, uploaded INTEGER DEFAULT 0);
+CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
 """
+
+SETTINGS_KEYS = frozenset({"api_base", "api_token", "user_id"})
 
 def connect(db: Path) -> sqlite3.Connection:
     db.parent.mkdir(parents=True, exist_ok=True)
@@ -64,3 +67,41 @@ def _has_synced(con: sqlite3.Connection) -> bool:
 def mark_screenshot_uploaded(con: sqlite3.Connection, sid: int) -> None:
     con.execute("UPDATE screenshots SET uploaded=1 WHERE id=?", (sid,))
     con.commit()
+
+
+def get_setting(con: sqlite3.Connection, key: str) -> str:
+    if key not in SETTINGS_KEYS:
+        raise ValueError(f"unknown setting: {key!r}")
+    row = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row[0] if row else ""
+
+
+def set_setting(con: sqlite3.Connection, key: str, value: str) -> None:
+    if key not in SETTINGS_KEYS:
+        raise ValueError(f"unknown setting: {key!r}")
+    con.execute(
+        "INSERT INTO settings(key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (key, value.strip()),
+    )
+    con.commit()
+
+
+def get_settings_dict(con: sqlite3.Connection) -> dict:
+    return {k: get_setting(con, k) for k in sorted(SETTINGS_KEYS)}
+
+
+def validate_settings(s: dict) -> dict[str, str]:
+    """Return {key: error} for invalid identity/API settings (empty = valid)."""
+    from urllib.parse import urlparse
+
+    errors: dict[str, str] = {}
+    base = s.get("api_base", "").strip()
+    u = urlparse(base)
+    if u.scheme not in ("http", "https") or not u.netloc:
+        errors["api_base"] = "must be an http(s) URL"
+    if not s.get("api_token", "").strip():
+        errors["api_token"] = "required"
+    if not s.get("user_id", "").strip():
+        errors["user_id"] = "required"
+    return errors

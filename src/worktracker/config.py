@@ -4,10 +4,10 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# NOTE: api_base/api_token/user_id moved to the DB settings table
+# (see store.SETTINGS_KEYS); leftover keys in old config.toml files are
+# loaded but never read.
 DEFAULTS = {
-    "api_base": "",
-    "api_token": "",
-    "user_id": "",
     "screenshot_interval_sec": 300,
     "poll_interval_sec": 5,
     "idle_after_sec": 180,
