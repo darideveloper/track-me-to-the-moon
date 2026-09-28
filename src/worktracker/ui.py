@@ -46,6 +46,18 @@ def format_session_row(started_at: str, ended_at: str | None) -> tuple[str, str]
     return title, subtitle
 
 
+def _snack(page, message: str) -> None:
+    """Best-effort SnackBar (window may already be closing)."""
+    try:
+        import flet as ft
+
+        page.snack_bar = ft.SnackBar(content=ft.Text(message))
+        page.snack_bar.open = True
+        page.update()
+    except Exception:
+        pass
+
+
 def main(page: ft.Page) -> None:
     cfg = config.load()
     con = store.connect(config.data_dir() / "tracker.db")
@@ -63,6 +75,7 @@ def main(page: ft.Page) -> None:
                         text_align=ft.TextAlign.CENTER)
     status_dot = ft.Container(width=12, height=12, border_radius=6, bgcolor=ft.Colors.GREY)
     status_text = ft.Text("Stopped")
+    sync_text = ft.Text("", size=11, color=ft.Colors.GREY)
     start_btn = ft.FilledButton("Start")
     stop_btn = ft.OutlinedButton("Stop", disabled=True)
     history = ft.ListView(expand=True, spacing=4)
@@ -75,6 +88,24 @@ def main(page: ft.Page) -> None:
 
     def refresh_hint() -> None:
         settings_hint.visible = bool(store.validate_settings(current_settings()))
+
+    def refresh_sync_status() -> None:
+        """Pending count + last-sync status (reads ledger, no extra thread)."""
+        try:
+            c = store.pending_counts(con)
+            total = c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+            if total > 0:
+                sync_text.value = f"↻ {total} pending"
+                return
+            last = store.last_sync(con)
+            if last is None:
+                sync_text.value = ""
+            elif last[6]:
+                sync_text.value = f"⚠ last sync failed: {last[6][:60]}"
+            else:
+                sync_text.value = "✓ synced"
+        except Exception:
+            sync_text.value = ""
 
     base_field = ft.TextField(label="API base URL", hint_text="https://api.example.com",
                               dense=True)
@@ -163,6 +194,7 @@ def main(page: ft.Page) -> None:
             title, subtitle = format_session_row(started_at, ended_at)
             history.controls.append(ft.ListTile(title=title, subtitle=subtitle, dense=True))
         refresh_hint()
+        refresh_sync_status()
         try:
             page.update()
         except Exception:
@@ -222,6 +254,39 @@ def main(page: ft.Page) -> None:
         on_stop()
         stop.set()
         try:
+            from . import sync as _sync
+
+            try:
+                c = store.pending_counts(con)
+                total = c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+            except Exception:
+                total = -1
+            if total > 0:
+                sync_text.value = f"Syncing… {total} items"
+                try:
+                    page.update()
+                except Exception:
+                    pass
+            remaining = _sync.flush(con, cfg, timeout=30, reason="close")
+            if remaining > 0:
+                sync_text.value = f"{remaining} items remain, retry next start"
+                _snack(page, f"Sync incomplete: {remaining} items will retry next start")
+            elif remaining == 0:
+                sync_text.value = "✓ synced"
+            try:
+                last = store.last_sync(con)
+                if last and last[6] and ("http 401" in last[6] or "http 403" in last[6]):
+                    settings_hint.visible = True
+                    settings_hint.value = "Sync unauthorized — check settings (⚙)."
+            except Exception:
+                pass
+            try:
+                page.update()
+            except Exception:
+                pass
+        except Exception:
+            pass
+        try:
             con.close()
         except Exception:
             pass
@@ -232,6 +297,7 @@ def main(page: ft.Page) -> None:
         timer_label,
         ft.Row([status_dot, status_text],
                alignment=ft.MainAxisAlignment.CENTER),
+        sync_text,
         settings_hint,
         ft.Row([start_btn, stop_btn],
                alignment=ft.MainAxisAlignment.CENTER),

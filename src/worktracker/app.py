@@ -42,6 +42,47 @@ def start_background_threads(con, cfg: dict, state: dict, stop: threading.Event)
     return threads
 
 
+def _pending_total(con) -> int:
+    try:
+        c = store.pending_counts(con)
+        return c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+    except Exception:
+        return -1
+
+
+def _tray_title(con, stopped: bool = True) -> str:
+    """Tray title with pending count + last-sync status (reads ledger, no thread)."""
+    base = "worktracker [Stopped]" if stopped else "worktracker [Recording]"
+    try:
+        c = store.pending_counts(con)
+        total = c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+        if total > 0:
+            return f"{base} · {total} pending"
+        last = store.last_sync(con)
+        if last and not last[6]:
+            return f"{base} · synced"
+    except Exception:
+        pass
+    return base
+
+
+def _close_flush(con, cfg: dict, timeout: float = 30) -> int:
+    """Blocking close flush with console message. Returns remaining pending."""
+    try:
+        total = _pending_total(con)
+        if total > 0:
+            print(f"Syncing… {total} items left (up to {int(timeout)}s)")
+        remaining = sync.flush(con, cfg, timeout=timeout, reason="close")
+        if remaining > 0:
+            print(f"Sync incomplete: {remaining} items remain, will retry next start")
+        elif remaining == 0:
+            print("Sync complete")
+        return remaining
+    except Exception as e:
+        print(f"Sync failed: {e}")
+        return -1
+
+
 def _icon(running: bool):
     from PIL import Image, ImageDraw
 
@@ -85,13 +126,14 @@ def run_tray() -> None:
             if icon is not None:
                 try:
                     icon.icon = _icon(False)
-                    icon.title = "worktracker [Stopped]"
+                    icon.title = _tray_title(con, stopped=True)
                 except Exception:
                     pass
 
     def on_quit(icon, _):
         stop_tracking(icon, _)
         stop.set()
+        _close_flush(con, cfg)
         try:
             icon.stop()
         except Exception:
@@ -107,6 +149,7 @@ def run_tray() -> None:
     def _quit(signum=None, frame=None):  # Ctrl+C / kill: break Xlib select, exit quietly
         stop_tracking()
         stop.set()
+        _close_flush(con, cfg)
         try:
             tray.stop()
         except Exception:
@@ -124,6 +167,7 @@ def run_tray() -> None:
     finally:
         stop_tracking()
         stop.set()
+        _close_flush(con, cfg)
         try:
             con.close()
         except Exception:
