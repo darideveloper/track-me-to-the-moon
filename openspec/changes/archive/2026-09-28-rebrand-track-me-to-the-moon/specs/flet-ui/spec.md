@@ -1,23 +1,4 @@
-## Requirements
-
-### Requirement: Live timer display
-
-The system SHALL display the current session elapsed time as `HH:MM:SS`, updating every second while recording, and `00:00:00` when stopped.
-
-#### Scenario: Timer ticks while recording
-
-- **WHEN** the user clicks Start and 3 seconds elapse
-- **THEN** the timer shows `00:00:03` (within 1s tolerance)
-
-#### Scenario: Timer freezes on Stop
-
-- **WHEN** the user clicks Stop
-- **THEN** the timer freezes at its final value and the status shows Stopped
-
-#### Scenario: Timer resets on next Start
-
-- **WHEN** the user clicks Start after a previous session
-- **THEN** the timer resets to `00:00:00` and starts ticking
+## MODIFIED Requirements
 
 ### Requirement: Start and Stop controls
 
@@ -80,12 +61,3 @@ The system SHALL open a desktop window titled "Track Me to the Moon" defaulting 
 
 - **WHEN** the app launches
 - **THEN** the window is approximately 340x560 with the branded title; and WHEN the user drags the window edge, the layout reflows and the history list scrolls instead of clipping
-
-### Requirement: Unchanged background tracking
-
-The system SHALL continue polling the active app every `poll_interval_sec`, flagging idle via `idle_after_sec`, taking screenshots every `screenshot_interval_sec` (with jitter), and queueing uploads offline — identical to current tray behavior.
-
-#### Scenario: Activities still recorded
-
-- **WHEN** a session is recording for 10 seconds with default 5s poll
-- **THEN** at least one `activities` row exists for that session

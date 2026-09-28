@@ -116,7 +116,8 @@ def add_screenshot(con: sqlite3.Connection, sid: int, ts: str, path: str) -> Non
 def list_sessions(con: sqlite3.Connection, limit: int = 10):
     with _LOCK:
         return con.execute(
-            "SELECT id, started_at, ended_at FROM sessions ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT id, started_at, ended_at, uploaded FROM sessions ORDER BY id DESC LIMIT ?",
+            (limit,),
         ).fetchall()
 
 

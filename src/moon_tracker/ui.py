@@ -1,4 +1,4 @@
-"""Flet desktop UI: live timer, Start/Stop, recent sessions."""
+"""Flet desktop UI: Track Me to the Moon — night-sky header, eclipse toggle, history."""
 from __future__ import annotations
 
 import asyncio
@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import flet as ft
 
-from . import config, store
+from . import brand, config, store
 from .app import _now, start_background_threads
 
 
@@ -58,6 +58,12 @@ def _snack(page, message: str) -> None:
         pass
 
 
+# Eclipse toggle geometry (C×D pill).
+_TRACK_W, _TRACK_H, _KNOB, _PAD = 280, 64, 56, 4
+_KNOB_LEFT = _PAD
+_KNOB_RIGHT = _TRACK_W - _KNOB - _PAD
+
+
 def main(page: ft.Page) -> None:
     cfg = config.load()
     con = store.connect(config.data_dir() / "tracker.db")
@@ -65,23 +71,66 @@ def main(page: ft.Page) -> None:
     stop = threading.Event()
     start_background_threads(con, cfg, state, stop)
 
-    page.title = "worktracker"
+    page.title = brand.DISPLAY_NAME
+    page.theme, page.dark_theme = brand.page_themes()
+    page.theme_mode = ft.ThemeMode.SYSTEM
     if page.window is not None:
-        page.window.width = 320
-        page.window.height = 450
+        page.window.width = 340
+        page.window.height = 560
         page.window.resizable = True
+        try:
+            page.window.icon = str(brand.asset_path())
+        except Exception:
+            pass  # ponytail: icon is decoration, never break startup
 
-    timer_label = ft.Text("00:00:00", size=40, weight=ft.FontWeight.BOLD,
-                        text_align=ft.TextAlign.CENTER)
+    # --- Night-sky header (always deep navy = brand anchor in both modes) ---
+    header_moon = ft.Text(brand.MOON_STOPPED, size=44, color=brand.MOON_WHITE,
+                          text_align=ft.TextAlign.CENTER)
+    stars = ft.Text("✦   ·   ✦   ·   ✦", size=10, color=brand.NIGHT_STAR,
+                    text_align=ft.TextAlign.CENTER)
+    timer_label = ft.Text("00:00:00", size=36, weight=ft.FontWeight.BOLD,
+                          color=brand.MOON_WHITE, font_family="monospace",
+                          text_align=ft.TextAlign.CENTER)
     status_dot = ft.Container(width=12, height=12, border_radius=6, bgcolor=ft.Colors.GREY)
-    status_text = ft.Text("Stopped")
-    sync_text = ft.Text("", size=11, color=ft.Colors.GREY)
-    start_btn = ft.FilledButton("Start")
-    stop_btn = ft.OutlinedButton("Stop", disabled=True)
-    history = ft.ListView(expand=True, spacing=4)
+    status_text = ft.Text("Stopped", color=brand.MOON_WHITE, size=13)
+    sync_text = ft.Text("", size=11, color=brand.DARK_MUTED, text_align=ft.TextAlign.CENTER)
+    theme_btn = ft.IconButton(icon=ft.Icons.DARK_MODE, tooltip="Toggle light / dark",
+                              icon_color=brand.MOON_WHITE)
+    gear_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings",
+                             icon_color=brand.MOON_WHITE)
+    header = ft.Container(
+        bgcolor=brand.NIGHT_SKY, border_radius=16, padding=12,
+        content=ft.Column([
+            ft.Row([gear_btn, stars, theme_btn],
+                   alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+            header_moon,
+            timer_label,
+            ft.Row([status_dot, status_text],
+                   alignment=ft.MainAxisAlignment.CENTER),
+            sync_text,
+        ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+    )
+
+    # --- Eclipse toggle (C): sliding moon knob on a pill track ---
+    knob_label = ft.Text(brand.MOON_STOPPED, size=26, color=brand.MOON_WHITE,
+                          text_align=ft.TextAlign.CENTER)
+    knob = ft.Container(width=_KNOB, height=_KNOB, left=_KNOB_LEFT, top=_PAD,
+                        shape=ft.BoxShape.CIRCLE, bgcolor=ft.Colors.GREY_700,
+                        alignment=ft.Alignment.CENTER, content=knob_label,
+                        animate_position=300, ignore_interactions=True)
+    toggle_caption = ft.Text(brand.LAUNCH_LABEL, size=13, tooltip=brand.LAUNCH_TOOLTIP,
+                             text_align=ft.TextAlign.CENTER)
+    track_label = ft.Container(alignment=ft.Alignment.CENTER,
+                               content=ft.Text("○ ────────── ●", size=10,
+                                               color=ft.Colors.GREY))
+    track = ft.Container(width=_TRACK_W, height=_TRACK_H, border_radius=32,
+                         border=ft.Border.all(1, ft.Colors.OUTLINE),
+                         content=ft.Stack([track_label, knob]))
+    toggle_icon = ft.Icon(ft.Icons.FLIGHT_TAKEOFF, size=16, color=ft.Colors.GREY)
+
     settings_hint = ft.Text("Settings incomplete — open ⚙ to finish setup.",
                             size=12, visible=False, color=ft.Colors.AMBER)
-    gear_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings")
+    history = ft.ListView(expand=True, spacing=4)
 
     def current_settings() -> dict:
         return store.get_settings_dict(con)
@@ -93,19 +142,32 @@ def main(page: ft.Page) -> None:
         """Pending count + last-sync status (reads ledger, no extra thread)."""
         try:
             c = store.pending_counts(con)
-            total = c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
-            if total > 0:
-                sync_text.value = f"↻ {total} pending"
-                return
+            total = brand.pending_total(c)
             last = store.last_sync(con)
-            if last is None:
-                sync_text.value = ""
-            elif last[6]:
-                sync_text.value = f"⚠ last sync failed: {last[6][:60]}"
+            err = last[6] if last else None
+            st = brand.sync_state(total, err)
+            if st == "pending":
+                sync_text.value = f"{brand.MOON_PENDING} {total} pending"
+            elif st == "failed":
+                sync_text.value = f"⚠ last sync failed: {(err or '')[:60]}"
+            elif st == "synced":
+                sync_text.value = f"{brand.MOON_SYNCED} synced"
             else:
-                sync_text.value = "✓ synced"
+                sync_text.value = ""
         except Exception:
             sync_text.value = ""
+
+    def refresh_header() -> None:
+        running = state["running"]
+        header_moon.value = brand.header_moon(running)
+        knob_label.value = brand.header_moon(running)
+        knob.left = _KNOB_RIGHT if running else _KNOB_LEFT
+        knob.bgcolor = brand.ACCENT_SKY if running else ft.Colors.GREY_700
+        status_text.value = "● Recording" if running else "Stopped"
+        status_dot.bgcolor = brand.ACCENT_SKY if running else ft.Colors.GREY
+        toggle_caption.value = brand.LAND_LABEL if running else brand.LAUNCH_LABEL
+        toggle_caption.tooltip = brand.LAND_TOOLTIP if running else brand.LAUNCH_TOOLTIP
+        toggle_icon.name = ft.Icons.FLIGHT_LAND if running else ft.Icons.FLIGHT_TAKEOFF
 
     base_field = ft.TextField(label="API base URL", hint_text="https://api.example.com",
                               dense=True)
@@ -185,26 +247,49 @@ def main(page: ft.Page) -> None:
     token_change_btn.on_click = on_token_change
     save_btn.on_click = on_save
 
+    def on_theme_toggle(_=None) -> None:
+        if page.theme_mode == ft.ThemeMode.DARK:
+            page.theme_mode = ft.ThemeMode.LIGHT
+            theme_btn.icon = ft.Icons.DARK_MODE
+        else:
+            page.theme_mode = ft.ThemeMode.DARK
+            theme_btn.icon = ft.Icons.LIGHT_MODE
+        page.update()
+
+    theme_btn.on_click = on_theme_toggle
+
     home_view = ft.Column([], visible=True)
     settings_view = ft.Column([], visible=False)
 
     def refresh_history() -> None:
         history.controls.clear()
-        for _sid, started_at, ended_at in store.list_sessions(con, 10):
+        rows = store.list_sessions(con, 10)
+        try:
+            any_pending = brand.pending_total(store.pending_counts(con)) > 0
+        except Exception:
+            any_pending = False
+        if not rows:
+            history.controls.append(ft.Text("No sessions yet — tap the moon to launch 🚀",
+                                           size=13, text_align=ft.TextAlign.CENTER))
+        for row in rows:
+            _sid, started_at, ended_at = row[0], row[1], row[2]
+            uploaded = row[3] if len(row) > 3 else None
             title, subtitle = format_session_row(started_at, ended_at)
-            history.controls.append(ft.ListTile(title=title, subtitle=subtitle, dense=True))
+            glyph = brand.row_moon(bool(uploaded) if uploaded is not None else None,
+                                   any_pending)
+            history.controls.append(ft.ListTile(leading=ft.Text(glyph, size=20),
+                                                title=ft.Text(title),
+                                                subtitle=ft.Text(subtitle), dense=True))
         refresh_hint()
         refresh_sync_status()
+        refresh_header()
         try:
             page.update()
         except Exception:
             pass  # ponytail: window already closed, ticker thread exits on stop event
 
     def set_ui(running: bool) -> None:
-        start_btn.disabled = running
-        stop_btn.disabled = not running
-        status_text.value = "● Recording" if running else "Stopped"
-        status_dot.bgcolor = ft.Colors.GREEN if running else ft.Colors.GREY
+        refresh_header()
 
     def on_start(_=None) -> None:
         if state["running"]:
@@ -233,8 +318,13 @@ def main(page: ft.Page) -> None:
         set_ui(False)
         refresh_history()
 
-    start_btn.on_click = on_start
-    stop_btn.on_click = on_stop
+    def on_toggle(_=None) -> None:
+        if state["running"]:
+            on_stop()
+        else:
+            on_start()
+
+    track.on_click = on_toggle
 
     async def ticker() -> None:
         # ponytail: single UI-update point on the page event loop (Flet 1.x
@@ -257,8 +347,7 @@ def main(page: ft.Page) -> None:
             from . import sync as _sync
 
             try:
-                c = store.pending_counts(con)
-                total = c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+                total = brand.pending_total(store.pending_counts(con))
             except Exception:
                 total = -1
             if total > 0:
@@ -272,7 +361,7 @@ def main(page: ft.Page) -> None:
                 sync_text.value = f"{remaining} items remain, retry next start"
                 _snack(page, f"Sync incomplete: {remaining} items will retry next start")
             elif remaining == 0:
-                sync_text.value = "✓ synced"
+                sync_text.value = f"{brand.MOON_SYNCED} synced"
             try:
                 last = store.last_sync(con)
                 if last and last[6] and ("http 401" in last[6] or "http 403" in last[6]):
@@ -293,14 +382,11 @@ def main(page: ft.Page) -> None:
 
     page.on_close = on_close
     home_view.controls = [
-        ft.Row([gear_btn], alignment=ft.MainAxisAlignment.START),
-        timer_label,
-        ft.Row([status_dot, status_text],
+        header,
+        ft.Row([toggle_icon, toggle_caption],
                alignment=ft.MainAxisAlignment.CENTER),
-        sync_text,
+        track,
         settings_hint,
-        ft.Row([start_btn, stop_btn],
-               alignment=ft.MainAxisAlignment.CENTER),
         ft.Divider(),
         ft.Text("Last tracked times"),
         history,
@@ -311,17 +397,21 @@ def main(page: ft.Page) -> None:
     settings_view.controls = [
         ft.Row([back_btn, ft.Text("Settings", weight=ft.FontWeight.BOLD)],
                alignment=ft.MainAxisAlignment.START),
-        base_field,
-        user_field,
-        token_field,
-        ft.Row([token_change_btn], alignment=ft.MainAxisAlignment.END),
-        ft.Row([save_btn], alignment=ft.MainAxisAlignment.CENTER),
-        settings_msg,
+        ft.Card(content=ft.Container(
+            padding=12,
+            content=ft.Column([base_field, user_field, token_field,
+                               ft.Row([token_change_btn],
+                                      alignment=ft.MainAxisAlignment.END),
+                               ft.Row([save_btn],
+                                      alignment=ft.MainAxisAlignment.CENTER),
+                               settings_msg], spacing=8),
+        )),
     ]
     settings_view.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
     settings_view.scroll = ft.ScrollMode.ADAPTIVE
     settings_view.expand = True
     page.add(home_view, settings_view)
+    refresh_header()
     refresh_hint()
     refresh_history()
     page.run_task(ticker)

@@ -11,7 +11,7 @@ import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-from worktracker import store
+from moon_tracker import store
 
 STUB_DELAY = 0.1
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CHILD = r"""
 import sys
 from pathlib import Path
-from worktracker import store, sync
+from moon_tracker import store, sync
 db, base = sys.argv[1], sys.argv[2]
 con = store.connect(Path(db))
 store.set_setting(con, "api_base", base)
@@ -126,7 +126,7 @@ def test_kill9_mid_drain_no_dupes(tmp_path):
     # so the union must cover all rows.
     server2 = _serve()
     try:
-        from worktracker import sync
+        from moon_tracker import sync
 
         con2 = store.connect(db)
         store.set_setting(con2, "api_base", f"http://127.0.0.1:{server2.server_port}")

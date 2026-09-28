@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-log = logging.getLogger("worktracker.notify")
+log = logging.getLogger("moon_tracker.notify")
 
 
 def _today() -> str:
@@ -45,7 +45,7 @@ def _send_desktop(title: str, message: str) -> bool:
     try:
         from plyer import notification  # type: ignore
 
-        notification.notify(title=title, message=message, app_name="worktracker")
+        notification.notify(title=title, message=message, app_name="Track Me to the Moon")
         return True
     except Exception:
         pass
@@ -54,7 +54,7 @@ def _send_desktop(title: str, message: str) -> bool:
         from PIL import Image  # type: ignore
 
         icon = pystray.Icon(
-            "worktracker-toast", Image.new("RGB", (64, 64), "grey"), "worktracker"
+            "moon-tracker-toast", Image.new("RGB", (64, 64), "grey"), "Track Me to the Moon"
         )
         icon.notify(message, title)
         try:

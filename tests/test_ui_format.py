@@ -1,4 +1,4 @@
-from worktracker import ui
+from moon_tracker import ui
 
 
 def test_format_hms():

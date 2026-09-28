@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime, timezone
 
-from . import collect, config, idle, shots, store, sync
+from . import brand, collect, config, idle, shots, store, sync
 
 
 def _now() -> str:
@@ -52,18 +52,14 @@ def _pending_total(con) -> int:
 
 def _tray_title(con, stopped: bool = True) -> str:
     """Tray title with pending count + last-sync status (reads ledger, no thread)."""
-    base = "worktracker [Stopped]" if stopped else "worktracker [Recording]"
     try:
-        c = store.pending_counts(con)
-        total = c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
-        if total > 0:
-            return f"{base} · {total} pending"
+        total = brand.pending_total(store.pending_counts(con))
         last = store.last_sync(con)
-        if last and not last[6]:
-            return f"{base} · synced"
+        synced = bool(last and not last[6]) and total == 0
+        return brand.tray_title(stopped, total, synced)
     except Exception:
         pass
-    return base
+    return brand.tray_title(stopped, 0, False)
 
 
 def _close_flush(con, cfg: dict, timeout: float = 30) -> int:
@@ -84,6 +80,19 @@ def _close_flush(con, cfg: dict, timeout: float = 30) -> int:
 
 
 def _icon(running: bool):
+    """Moon-asset tray icon (gold ring when recording), legacy dot fallback."""
+    try:
+        from PIL import Image, ImageDraw
+
+        p = brand.asset_path()
+        if p.exists():
+            img = Image.open(p).convert("RGBA").resize((64, 64))
+            if running:
+                d = ImageDraw.Draw(img)
+                d.ellipse([2, 2, 62, 62], outline="#7DD3FC", width=4)
+            return img
+    except Exception:
+        pass
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (64, 64), "green" if running else "grey")
@@ -114,7 +123,7 @@ def run_tray() -> None:
             state["sid"] = store.start_session(con, _now())
             state["running"] = True
             icon.icon = _icon(True)
-            icon.title = "worktracker [Recording]"
+            icon.title = _tray_title(con, stopped=False)
 
     def stop_tracking(icon=None, _=None):
         if state["running"]:
@@ -140,11 +149,12 @@ def run_tray() -> None:
             pass
 
     menu = pystray.Menu(
-        pystray.MenuItem("Start", start),
-        pystray.MenuItem("Stop", stop_tracking),
+        pystray.MenuItem("Launch", start),
+        pystray.MenuItem("Land", stop_tracking),
         pystray.MenuItem("Quit", on_quit),
     )
-    tray = pystray.Icon("worktracker", _icon(False), "worktracker [Stopped]", menu)
+    tray = pystray.Icon(brand.DISPLAY_NAME, _icon(False),
+                        _tray_title(con, stopped=True), menu)
 
     def _quit(signum=None, frame=None):  # Ctrl+C / kill: break Xlib select, exit quietly
         stop_tracking()
@@ -175,7 +185,7 @@ def run_tray() -> None:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(prog="worktracker")
+    ap = argparse.ArgumentParser(prog="moon-tracker")
     ap.add_argument("--once", action="store_true", help="print one poll and exit")
     ap.add_argument("--shot", action="store_true", help="take one screenshot and exit")
     a = ap.parse_args()

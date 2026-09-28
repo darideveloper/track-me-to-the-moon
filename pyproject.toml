@@ -1,7 +1,7 @@
 [project]
-name = "worktracker"
+name = "moon-tracker"
 version = "0.1.0"
-description = "Simple Apploye-like team work tracker (time + screenshots + app titles)"
+description = "Track Me to the Moon - simple Apploye-like team work tracker (time + screenshots + app titles)"
 requires-python = ">=3.10"
 dependencies = [
   "flet==1.0.1",
@@ -15,7 +15,8 @@ dependencies = [
 ]
 
 [project.scripts]
-worktracker = "worktracker.app:main"
+moon-tracker = "moon_tracker.app:main"
+worktracker = "moon_tracker.app:main"
 
 [build-system]
 requires = ["setuptools>=61"]

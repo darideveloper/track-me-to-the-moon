@@ -1,4 +1,4 @@
-from worktracker import store
+from moon_tracker import store
 
 import pytest
 

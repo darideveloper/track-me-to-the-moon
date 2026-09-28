@@ -13,11 +13,24 @@ DEFAULTS = {
     "idle_after_sec": 180,
 }
 
+def _migrate_dir(old: Path, new: Path) -> Path:
+    """One-way move from legacy `worktracker` dirs (keeps sessions + settings)."""
+    try:
+        if not new.exists() and old.exists():
+            old.rename(new)
+    except Exception:
+        pass  # ponytail: stale data never blocks startup; old dir simply stays
+    return new
+
+
 def config_path() -> Path:
-    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "worktracker" / "config.toml"
+    base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    p = _migrate_dir(base / "worktracker", base / "moon-tracker") / "config.toml"
+    return p
 
 def data_dir() -> Path:
-    d = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "worktracker"
+    base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
+    d = _migrate_dir(base / "worktracker", base / "moon-tracker")
     d.mkdir(parents=True, exist_ok=True)
     (d / "shots").mkdir(exist_ok=True)
     return d

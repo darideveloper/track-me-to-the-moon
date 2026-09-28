@@ -1,7 +1,7 @@
 import time
 
-from worktracker import api, store, sync
-from worktracker.sync import cleanup_screenshots
+from moon_tracker import api, store, sync
+from moon_tracker.sync import cleanup_screenshots
 
 
 def _seed(con, n_act=250, n_shots=0, tmp_path=None):
@@ -109,7 +109,7 @@ def test_cleanup_keeps_recent_deletes_old(tmp_path):
 
 
 def test_notify_once_per_day(tmp_path):
-    from worktracker import notify
+    from moon_tracker import notify
 
     con = store.connect(tmp_path / "t.db")
     assert notify.send(con, "sync_failed", "t", "m") is True
@@ -151,7 +151,7 @@ def test_flush_honors_deadline(tmp_path, monkeypatch):
 
 
 def test_three_failed_ticks_single_toast(tmp_path, monkeypatch):
-    from worktracker import notify
+    from moon_tracker import notify
 
     con = store.connect(tmp_path / "t.db")
     _seed(con, 5)

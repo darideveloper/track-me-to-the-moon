@@ -1,4 +1,4 @@
-# worktracker v1
+# Track Me to the Moon (moon-tracker v1)
 
 Simple team work tracker (Apploye-like): Start/Stop timer, active app + window title every 5s, JPEG screenshot every 5-10 min, offline SQLite queue, background upload to proprietary API.
 
@@ -8,16 +8,16 @@ Title-only (no browser URLs). X11 recommended on Linux (Wayland blocks global wi
 
 ```bash
 pip install -e .
-python -m worktracker --help
-python -m worktracker --once        # one poll print, no UI
-python -m worktracker               # Flet window: live timer, Start/Stop, last 10 sessions
+python -m moon_tracker --help
+python -m moon_tracker --once        # one poll print, no UI
+python -m moon_tracker               # Flet window: live timer, Launch/Land, last 10 sessions
 ```
 
 Config, data, and shots dirs are auto-created on first start.
 
-- Linux: `~/.config/worktracker/config.toml`, `~/.local/share/worktracker/tracker.db`, shots under `~/.local/share/worktracker/shots/YYYY-MM-DD/`
+- Linux: `~/.config/moon-tracker/config.toml`, `~/.local/share/moon-tracker/tracker.db`, shots under `~/.local/share/moon-tracker/shots/YYYY-MM-DD/` (legacy `worktracker` dirs auto-migrate on first start)
 - macOS: same as Linux (`~/.config/...`, `~/.local/share/...`)
-- Windows: `%USERPROFILE%\.config\worktracker\config.toml`, `%USERPROFILE%\.local\share\worktracker\tracker.db`, shots under `%USERPROFILE%\.local\share\worktracker\shots\YYYY-MM-DD\`
+- Windows: `%USERPROFILE%\.config\moon-tracker\config.toml`, `%USERPROFILE%\.local\share\moon-tracker\tracker.db`, shots under `%USERPROFILE%\.local\share\moon-tracker\shots\YYYY-MM-DD\`
 
 `$XDG_CONFIG_HOME` / `$XDG_DATA_HOME` ( `%XDG_CONFIG_HOME%` / `%XDG_DATA_HOME%` on Windows) override the defaults when set.
 

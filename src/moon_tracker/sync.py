@@ -7,7 +7,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 
-from . import api
+from . import api, brand
 
 SYNC_INTERVAL_SEC = 600
 JITTER_SEC = 30
@@ -161,7 +161,7 @@ def drain(con, cfg: dict, reason: str = "tick", deadline: float | None = None,
         if stats.get("failed") and not stats.get("skipped"):
             try:
                 (notify_fn or _default_notify)(
-                    con, "sync_failed", "worktracker sync failed",
+                    con, "sync_failed", f"{brand.DISPLAY_NAME} sync failed",
                     stats["error"] or "upload failed; will retry in 10 minutes")
             except Exception:
                 pass
