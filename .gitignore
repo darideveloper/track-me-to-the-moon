@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+build/
+*.spec
+data/
+*.db
+*.jpg
+*.log
+
+# Ignore proposals
+openspec/changes/*
+
+# Do not ignore archived proposals
+!openspec/changes/archive/
+
+*.egg-info/
+node_modules/
+.pytest_cache/
+
+# ignore by default all hiden folders (like agents folders)
+.*/
+# Keep openspec tooling
+!/.opencode/

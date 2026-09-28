@@ -1,0 +1,30 @@
+[project]
+name = "worktracker"
+version = "0.1.0"
+description = "Simple Apploye-like team work tracker (time + screenshots + app titles)"
+requires-python = ">=3.10"
+dependencies = [
+  "mss",
+  "Pillow",
+  "PyWinCtl",
+  "psutil",
+  "pystray",
+  "pynput",
+  "requests",
+]
+
+[project.scripts]
+worktracker = "worktracker.app:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
