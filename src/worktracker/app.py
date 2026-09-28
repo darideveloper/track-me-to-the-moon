@@ -14,6 +14,34 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def start_background_threads(con, cfg: dict, state: dict, stop: threading.Event) -> list:
+    """Collector + uploader daemon threads shared by tray and Flet frontends."""
+    watcher = idle.IdleWatcher()
+
+    def workers():
+        last_shot = 0.0
+        while not stop.wait(cfg.get("poll_interval_sec", 5)):
+            if not state["running"]:
+                continue
+            is_idle = watcher.is_idle(cfg.get("idle_after_sec", 180))
+            app, title = collect.poll()
+            store.add_activity(con, state["sid"], _now(), app, title, int(is_idle))
+            iv = cfg.get("screenshot_interval_sec", 300)
+            if not is_idle and time.time() - last_shot >= iv + random.uniform(0, 30):
+                p = shots.take(config.data_dir())
+                if p:
+                    store.add_screenshot(con, state["sid"], _now(), str(p))
+                last_shot = time.time()
+
+    threads = [
+        threading.Thread(target=workers, daemon=True),
+        threading.Thread(target=sync.loop, args=(con, cfg, stop), daemon=True),
+    ]
+    for t in threads:
+        t.start()
+    return threads
+
+
 def _icon(running: bool):
     from PIL import Image, ImageDraw
 
@@ -38,25 +66,7 @@ def run_tray() -> None:
     con = store.connect(config.data_dir() / "tracker.db")
     state = {"running": False, "sid": None}
     stop = threading.Event()
-    watcher = idle.IdleWatcher()
-
-    def workers():
-        last_shot = 0.0
-        while not stop.wait(cfg.get("poll_interval_sec", 5)):
-            if not state["running"]:
-                continue
-            is_idle = watcher.is_idle(cfg.get("idle_after_sec", 180))
-            app, title = collect.poll()
-            store.add_activity(con, state["sid"], _now(), app, title, int(is_idle))
-            iv = cfg.get("screenshot_interval_sec", 300)
-            if not is_idle and time.time() - last_shot >= iv + random.uniform(0, 30):
-                p = shots.take(config.data_dir())
-                if p:
-                    store.add_screenshot(con, state["sid"], _now(), str(p))
-                last_shot = time.time()
-
-    threading.Thread(target=workers, daemon=True).start()
-    threading.Thread(target=sync.loop, args=(con, cfg, stop), daemon=True).start()
+    start_background_threads(con, cfg, state, stop)
 
     def start(icon, _):
         if not state["running"]:
@@ -130,7 +140,9 @@ def main() -> None:
     elif a.shot:
         print(shots.take(config.data_dir()))
     else:
-        run_tray()
+        from . import ui
+
+        ui.run()
 
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ Title-only (no browser URLs). X11 recommended on Linux (Wayland blocks global wi
 ```bash
 pip install -e .
 python -m worktracker --help
-python -m worktracker --once        # one poll print, no tray
-python -m worktracker               # tray app: Start / Stop / Quit
+python -m worktracker --once        # one poll print, no UI
+python -m worktracker               # Flet window: live timer, Start/Stop, last 10 sessions
 ```
 
 Config: `~/.config/worktracker/config.toml` (auto-created with defaults).

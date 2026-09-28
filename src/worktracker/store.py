@@ -37,6 +37,12 @@ def add_screenshot(con: sqlite3.Connection, sid: int, ts: str, path: str) -> Non
     con.execute("INSERT INTO screenshots(session_id, ts, path) VALUES (?,?,?)", (sid, ts, path))
     con.commit()
 
+def list_sessions(con: sqlite3.Connection, limit: int = 10):
+    return con.execute(
+        "SELECT id, started_at, ended_at FROM sessions ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+
+
 def pending_screenshots(con: sqlite3.Connection, limit: int = 20):
     return con.execute(
         "SELECT id, session_id, ts, path FROM screenshots WHERE uploaded=0 ORDER BY id LIMIT ?", (limit,)

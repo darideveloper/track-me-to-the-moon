@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Simple Apploye-like team work tracker (time + screenshots + app titles)"
 requires-python = ">=3.10"
 dependencies = [
+  "flet==1.0.1",
   "mss",
   "Pillow",
   "PyWinCtl",
