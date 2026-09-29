@@ -8,7 +8,13 @@ from datetime import datetime, timezone
 import flet as ft
 
 from . import brand, config, store
+from . import version as _version
 from .app import _now, start_background_threads
+
+
+def version_footer_text() -> str:
+    """Footer string for the tracker window (runtime version, `unknown` fallback)."""
+    return _version.get_version()
 
 
 def format_hms(total_seconds: int) -> str:
@@ -131,6 +137,9 @@ def main(page: ft.Page) -> None:
     settings_hint = ft.Text("Settings incomplete — open ⚙ to finish setup.",
                             size=12, visible=False, color=ft.Colors.AMBER)
     history = ft.ListView(expand=True, spacing=4)
+    version_footer = ft.Text(version_footer_text(), size=10,
+                             color=brand.DARK_MUTED,
+                             text_align=ft.TextAlign.CENTER)
 
     def current_settings() -> dict:
         return store.get_settings_dict(con)
@@ -390,6 +399,7 @@ def main(page: ft.Page) -> None:
         ft.Divider(),
         ft.Text("Last tracked times"),
         history,
+        version_footer,
     ]
     home_view.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     home_view.scroll = ft.ScrollMode.ADAPTIVE

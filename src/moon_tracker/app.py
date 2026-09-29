@@ -188,8 +188,13 @@ def main() -> None:
     ap = argparse.ArgumentParser(prog="moon-tracker")
     ap.add_argument("--once", action="store_true", help="print one poll and exit")
     ap.add_argument("--shot", action="store_true", help="take one screenshot and exit")
+    ap.add_argument("--version", action="store_true", help="print version and exit")
     a = ap.parse_args()
-    if a.once:
+    if a.version:
+        from . import version as _version
+
+        print(_version.get_version())
+    elif a.once:
         print(collect.poll())
     elif a.shot:
         print(shots.take(config.data_dir()))

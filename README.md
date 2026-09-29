@@ -13,6 +13,46 @@ python -m moon_tracker --once        # one poll print, no UI
 python -m moon_tracker               # Flet window: live timer, Launch/Land, last 10 sessions
 ```
 
+## Portable run (no install, easy update)
+
+Clone and double-click — no build step, tracks `main`:
+
+```bash
+git clone <repo-url> moon-tracker
+cd moon-tracker
+```
+
+- Windows: double-click `run.bat`
+- Linux: `./run.sh` (make executable once: `chmod +x run.sh`)
+
+The launcher checks git + Python 3.10+, installs `uv` if missing
+(`uv python install 3.12` fallback), syncs exact deps from `uv.lock`,
+warns if you're not on `main`, then opens the tracker. Keep the
+terminal open — logs show there.
+
+First run downloads ~100MB (Flet/Flutter) — looks stuck, isn't.
+Windows may show a firewall prompt for the tracker window; that's expected.
+On Linux Wayland, window titles are best-effort (X11 recommended).
+
+First-time setup: open the ⚙ settings screen and paste the
+`api_base` / `user_id` / `api_token` sent via chat, then Save.
+Settings live in `tracker.db`, so updates never wipe them.
+
+Update anytime (seconds, data preserved):
+
+```bash
+git pull --ff-only
+```
+
+then re-run `run.bat` / `run.sh` (re-syncs deps automatically).
+If the tree is dirty the pull aborts — commit or stash first.
+No separate updater script. The footer shows your version
+(`main@<hash> <date>`) — quote it in bug reports.
+
+Diagnostics: `run.sh --once` (one poll, no UI), `run.sh --version`.
+
+Contributors: `uv sync --frozen --extra dev` then `uv run --frozen --extra dev pytest` to run the test suite.
+
 Config, data, and shots dirs are auto-created on first start.
 
 - Linux: `~/.config/moon-tracker/config.toml`, `~/.local/share/moon-tracker/tracker.db`, shots under `~/.local/share/moon-tracker/shots/YYYY-MM-DD/` (legacy `worktracker` dirs auto-migrate on first start)

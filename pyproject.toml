@@ -18,6 +18,9 @@ dependencies = [
 moon-tracker = "moon_tracker.app:main"
 worktracker = "moon_tracker.app:main"
 
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
 [build-system]
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
