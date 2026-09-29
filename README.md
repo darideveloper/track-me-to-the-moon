@@ -47,6 +47,13 @@ If no `api_base` is stored in settings, uploader just keeps queue (offline mode)
 - Linux: needs X11 session + `python3-xlib` deps (auto via PyWinCtl). Wayland = best-effort.
 - Windows: no special perms.
 
+## Features in progress
+
+Browser **domain** capture (active tab hostname only) is developed on the
+`web-extension` branch, not on `main`. See
+[`docs/browser-extension-urls.md`](docs/browser-extension-urls.md) for the
+feature description, privacy model, and settings toggle.
+
 ## Package
 
 ```bash
