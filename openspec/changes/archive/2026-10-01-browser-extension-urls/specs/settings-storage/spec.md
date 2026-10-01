@@ -1,4 +1,4 @@
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Settings singleton table
 
@@ -37,12 +37,3 @@ The system SHALL provide `get_setting(con, key)`, `set_setting(con, key, value)`
 
 - **WHEN** no value was ever stored for `record_urls`
 - **THEN** `get_setting(con, "record_urls")` returns `"1"`; and WHEN `set_setting(con, "record_urls", "0")` is called THEN subsequent reads return `"0"`
-
-### Requirement: Readers observe latest saved values
-
-Background upload and collector cycles SHALL read settings from the database on each cycle rather than relying on a cached dict, so a UI save is visible to the next cycle without restart.
-
-#### Scenario: Save propagates without restart
-
-- **WHEN** the user saves a new `api_base` while the uploader thread is running
-- **THEN** the next drain cycle uses the new `api_base`
