@@ -87,6 +87,29 @@ If no `api_base` is stored in settings, uploader just keeps queue (offline mode)
 - Linux: needs X11 session + `python3-xlib` deps (auto via PyWinCtl). Wayland = best-effort.
 - Windows: no special perms.
 
+## Taskbar icon
+
+On launch the app sets its own taskbar/dock identity (moon icon) instead of
+the generic Flet logo. On Linux it also installs a user-scope desktop entry
+plus icon, which provides the app-menu launcher:
+
+- `~/.local/share/applications/moon-tracker.desktop`
+- `~/.local/share/icons/hicolor/256x256/apps/moon-tracker.png`
+
+Limitation: the prebuilt Flet client pins its window class, so on Wayland
+the *running* window icon needs a packaged build (`flet pack`/`flet build`);
+the dev entry covers the launcher.
+
+This is idempotent and re-applied every start (self-heals across Flet
+upgrades). To remove: delete both files. To skip: set
+`MOON_TRACKER_NO_DESKTOP_ENTRY=1`. A future packaged install reuses the same
+app id and supersedes the dev entry. Permanent route: `flet build` reads
+`assets/icon_linux.png`, `flet pack --icon assets/moon-icon.ico` stamps the
+Windows exe (also needed for the pinned-taskbar group icon).
+`assets/moon-icon.icns` is generated from `assets/moon-icon.png`
+(`ic07`/`ic08`/`ic09` PNG elements); on macOS regenerate with
+`iconutil` from a `moon-icon.iconset`.
+
 ## Features in progress
 
 Browser **domain** capture (active tab hostname only) is developed on the

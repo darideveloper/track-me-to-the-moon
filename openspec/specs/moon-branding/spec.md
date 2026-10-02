@@ -68,7 +68,7 @@ The system SHALL provide a single pill-track toggle with a sliding moon knob (an
 
 ### Requirement: Moon icon assets
 
-The system SHALL ship a geometric crescent-on-disc moon icon (`assets/moon-icon.png` plus 256px and `.ico` variants) used for the tray icon (with a sky ring overlay while recording), the Flet window icon, and the PyInstaller `--icon` build flag, with a drawn fallback if the asset is missing.
+The system SHALL ship a geometric crescent-on-disc moon icon (`assets/moon-icon.png` plus 256px, `.ico`, and `.icns` variants) used for the tray icon (with a sky ring overlay while recording), the per-platform taskbar/dock identity (Flet window icon via `.ico` on Windows; cached-client icon patch plus `FLET_APP_ID` and an auto-installed `.desktop` entry on Linux; cached-bundle icon patch on macOS, best-effort), and the PyInstaller `--icon` build flag, with a drawn fallback if an asset is missing. All icon-identity work is best-effort and SHALL never prevent the window from opening.
 
 #### Scenario: Recording tray shows the ring
 
@@ -79,6 +79,11 @@ The system SHALL ship a geometric crescent-on-disc moon icon (`assets/moon-icon.
 
 - **WHEN** the icon file is absent or unreadable
 - **THEN** the tray falls back to the legacy drawn icon and the window opens without an icon
+
+#### Scenario: Linux taskbar shows the moon
+
+- **WHEN** the app launches on Linux
+- **THEN** the taskbar entry shows the moon asset on X11 (window icon) and the app menu shows the moon launcher; a Wayland running-window icon requires a packaged build
 
 ### Requirement: Shared recording/sync glyph language
 

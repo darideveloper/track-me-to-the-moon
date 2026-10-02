@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import sys
 import threading
 from datetime import datetime, timezone
 
 import flet as ft
 
-from . import brand, config, debuglog, store
+from . import brand, config, debuglog, desktop_entry, store
 from . import version as _version
 from .app import _now, start_background_threads
 
@@ -85,7 +87,7 @@ def main(page: ft.Page) -> None:
         page.window.height = 560
         page.window.resizable = True
         try:
-            page.window.icon = str(brand.asset_path())
+            page.window.icon = str(brand.asset_path(desktop_entry.platform_icon_name()))
         except Exception:
             pass  # ponytail: icon is decoration, never break startup
 
@@ -655,6 +657,18 @@ def main(page: ft.Page) -> None:
 
 
 def run() -> None:
+    if sys.platform == "linux":
+        try:
+            os.environ.setdefault("FLET_APP_ID", desktop_entry.APP_ID)
+            desktop_entry.patch_client_icon()
+            desktop_entry.ensure_installed(desktop_entry.repo_root())
+        except Exception:
+            pass  # ponytail: icon is decoration, never break startup
+    elif sys.platform == "darwin":
+        try:
+            desktop_entry.ensure_macos_bundle_icon()
+        except Exception:
+            pass  # ponytail: icon is decoration, never break startup
     ft.run(main)
 
 
