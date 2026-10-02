@@ -71,6 +71,14 @@ def _migrate(con: sqlite3.Connection) -> None:
             """
         )
         con.executescript(INDEXES)
+        try:
+            # Backfill: sessions closed after a mid-run tick were marked
+            # uploaded=1 with ended_at set, so close flush never resent them.
+            con.execute(
+                "UPDATE sessions SET uploaded=0 WHERE uploaded=1 AND ended_at IS NOT NULL"
+            )
+        except Exception:
+            pass
         con.commit()
 
 
@@ -88,13 +96,19 @@ def connect(db: Path) -> sqlite3.Connection:
 def start_session(con: sqlite3.Connection, ts: str) -> int:
     with _LOCK:
         cur = con.execute("INSERT INTO sessions(started_at) VALUES (?)", (ts,))
+        sid = cur.lastrowid
+        # ponytail: one shared sessions table, a new Launch ends crash orphans
+        con.execute(
+            "UPDATE sessions SET ended_at=?, uploaded=0 WHERE ended_at IS NULL AND id != ?",
+            (ts, sid),
+        )
         con.commit()
-        return cur.lastrowid
+        return sid
 
 
 def end_session(con: sqlite3.Connection, sid: int, ts: str) -> None:
     with _LOCK:
-        con.execute("UPDATE sessions SET ended_at=? WHERE id=?", (ts, sid))
+        con.execute("UPDATE sessions SET ended_at=?, uploaded=0 WHERE id=?", (ts, sid))
         con.commit()
 
 
