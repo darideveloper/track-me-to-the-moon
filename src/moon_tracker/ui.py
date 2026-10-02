@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import flet as ft
 
-from . import brand, config, store
+from . import brand, config, debuglog, store
 from . import version as _version
 from .app import _now, start_background_threads
 
@@ -104,10 +104,12 @@ def main(page: ft.Page) -> None:
                               icon_color=brand.MOON_WHITE)
     gear_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings",
                              icon_color=brand.MOON_WHITE)
+    debug_btn = ft.IconButton(icon=ft.Icons.BUG_REPORT, tooltip="Debug: API log + manual send",
+                              icon_color=brand.MOON_WHITE)
     header = ft.Container(
         bgcolor=brand.NIGHT_SKY, border_radius=16, padding=12,
         content=ft.Column([
-            ft.Row([gear_btn, stars, theme_btn],
+            ft.Row([ft.Row([gear_btn, debug_btn], spacing=0), stars, theme_btn],
                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             header_moon,
             timer_label,
@@ -211,13 +213,22 @@ def main(page: ft.Page) -> None:
     def show_settings(_=None) -> None:
         refresh_settings()
         home_view.visible = False
+        debug_view.visible = False
         settings_view.visible = True
         page.update()
 
     def show_home(_=None) -> None:
         settings_view.visible = False
+        debug_view.visible = False
         home_view.visible = True
         refresh_hint()
+        page.update()
+
+    def show_debug(_=None) -> None:
+        home_view.visible = False
+        settings_view.visible = False
+        debug_view.visible = True
+        refresh_debug_log()
         page.update()
 
     def on_token_change(_=None) -> None:
@@ -267,8 +278,190 @@ def main(page: ft.Page) -> None:
 
     theme_btn.on_click = on_theme_toggle
 
+    # --- Debug view: manual actions + live API log (session-only ring) ---
+    debug_log = ft.ListView(expand=True, spacing=2)
+    debug_msg = ft.Text("", size=12)
+    debug_count = ft.Text("", size=11, color=brand.DARK_MUTED)
+    debug_bundle_field = ft.TextField(label="Debug bundle (copy manually if clipboard fails)",
+                                      multiline=True, read_only=True, visible=False,
+                                      min_lines=4, max_lines=8, dense=True)
+    debug_back_btn = ft.TextButton("‹ Back")
+    debug_busy = {"on": False}
+    debug_result = {"msg": None}
+    debug_show_all = {"on": False}
+
+    shot_btn = ft.FilledButton("📸 Screenshot")
+    sess_btn = ft.OutlinedButton("Sessions")
+    act_btn = ft.OutlinedButton("Activities")
+    shots_btn = ft.OutlinedButton("Screenshots")
+    send_all_btn = ft.OutlinedButton("Send all")
+    ping_btn = ft.OutlinedButton("🧪 Test")
+    copy_btn = ft.TextButton("Copy bundle")
+    clear_btn = ft.TextButton("Clear")
+    show_more_btn = ft.TextButton("Show more")
+    _debug_buttons = [shot_btn, sess_btn, act_btn, shots_btn, send_all_btn, ping_btn]
+
+    def _set_debug_busy(busy: bool) -> None:
+        debug_busy["on"] = busy
+        for b in _debug_buttons:
+            b.disabled = busy
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    def refresh_debug_log() -> None:
+        """Render newest-first log rows (ticker-polled, page-loop only)."""
+        try:
+            events = debuglog.recent(200)
+        except Exception:
+            events = []
+        debug_count.value = f"API calls this session: {len(events)}" if events else "No API calls yet"
+        debug_log.controls.clear()
+        visible = events if debug_show_all["on"] else events[:60]
+        for e in visible:
+            try:
+                title = debuglog.compact(e)
+            except Exception:
+                title = "api event"
+            req = str(getattr(e, "req_preview", "") or "")
+            res = str(getattr(e, "res_preview", "") or "")
+            details = []
+            if req:
+                details.append(ft.Text(f"req: {req}", size=10, selectable=True))
+            if res:
+                details.append(ft.Text(f"res: {res}", size=10, selectable=True))
+            if not details:
+                details.append(ft.Text("no payload", size=10))
+            dot = "🟢" if getattr(e, "ok", False) else ("⚪" if getattr(e, "status", None) is None else "🔴")
+            debug_log.controls.append(ft.ExpansionTile(
+                title=ft.Text(f"{dot} {title}", size=11),
+                controls=details, dense=True))
+        show_more_btn.visible = len(events) > 60 and not debug_show_all["on"]
+        if debug_result["msg"] is not None:
+            debug_msg.value = debug_result["msg"]
+            debug_result["msg"] = None
+            _set_debug_busy(False)
+            refresh_sync_status()
+            try:
+                page.update()
+            except Exception:
+                pass
+
+    def _run_manual(kind: str, tables=None):
+        if debug_busy["on"]:
+            return
+        _set_debug_busy(True)
+        debug_msg.value = "Working…"
+        try:
+            page.update()
+        except Exception:
+            pass
+
+        def work() -> None:
+            try:
+                from . import sync as _sync
+
+                if kind == "shot":
+                    _status, msg, _stats = _sync.manual_screenshot(con, cfg, state)
+                elif kind == "ping":
+                    res = _sync.test_connection(con)
+                    label = res.status if res.status is not None else res.error
+                    msg = f"Ping: {label}" if res.ok else f"Ping failed: {label}"
+                else:
+                    stats = _sync.manual_send(con, cfg, tables)
+                    msg = (f"Sent sessions/activities/shots="
+                           f"{stats['sent_sessions']}/{stats['sent_activities']}/"
+                           f"{stats['sent_screenshots']}")
+                    if stats.get("skipped"):
+                        msg += " (skipped: no api_base)"
+                    elif stats.get("error"):
+                        msg += f" — {stats['error'][:80]}"
+                debug_result["msg"] = msg
+            except Exception as ex:  # never kill the worker on UI errors
+                debug_result["msg"] = f"Failed: {ex}"
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_shot(_=None) -> None:
+        _run_manual("shot")
+
+    def on_send_sessions(_=None) -> None:
+        _run_manual("sessions", ("sessions",))
+
+    def on_send_activities(_=None) -> None:
+        _run_manual("activities", ("activities",))
+
+    def on_send_shots(_=None) -> None:
+        _run_manual("shots", ("screenshots",))
+
+    def on_send_all(_=None) -> None:
+        _run_manual("all", ("sessions", "activities", "screenshots"))
+
+    def on_ping(_=None) -> None:
+        _run_manual("ping")
+
+    def on_show_more(_=None) -> None:
+        debug_show_all["on"] = True
+        refresh_debug_log()
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    async def on_copy(_=None) -> None:
+        try:
+            bundle = debuglog.format_bundle(
+                version_footer_text(), store.pending_counts(con),
+                store.last_sync(con), debuglog.recent())
+        except Exception as ex:
+            _snack(page, f"Bundle failed: {ex}")
+            return
+        copied = False
+        try:
+            svc = getattr(page, "clipboard", None)
+            if svc is not None:
+                await svc.set(bundle)
+                copied = True
+        except Exception:
+            copied = False
+        if copied:
+            _snack(page, "Debug bundle copied ✓")
+        else:
+            debug_bundle_field.value = bundle
+            debug_bundle_field.visible = True
+            _snack(page, "Clipboard unavailable — bundle shown below, select & copy")
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    def on_clear(_=None) -> None:
+        debuglog.clear()
+        debug_show_all["on"] = False
+        debug_bundle_field.visible = False
+        refresh_debug_log()
+        _snack(page, "Log cleared (outbox untouched)")
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    debug_back_btn.on_click = show_home
+    debug_btn.on_click = show_debug
+    shot_btn.on_click = on_shot
+    sess_btn.on_click = on_send_sessions
+    act_btn.on_click = on_send_activities
+    shots_btn.on_click = on_send_shots
+    send_all_btn.on_click = on_send_all
+    ping_btn.on_click = on_ping
+    copy_btn.on_click = on_copy
+    clear_btn.on_click = on_clear
+    show_more_btn.on_click = on_show_more
+
     home_view = ft.Column([], visible=True)
     settings_view = ft.Column([], visible=False)
+    debug_view = ft.Column([], visible=False)
 
     def refresh_history() -> None:
         history.controls.clear()
@@ -348,6 +541,13 @@ def main(page: ft.Page) -> None:
             tick += 1
             if tick % 5 == 0:
                 refresh_history()
+            if tick % 2 == 0:
+                try:
+                    if debug_view.visible:
+                        refresh_debug_log()
+                        page.update()
+                except Exception:
+                    pass
 
     def on_close(_=None) -> None:
         on_stop()
@@ -420,7 +620,34 @@ def main(page: ft.Page) -> None:
     settings_view.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
     settings_view.scroll = ft.ScrollMode.ADAPTIVE
     settings_view.expand = True
-    page.add(home_view, settings_view)
+    debug_view.controls = [
+        ft.Row([debug_back_btn, ft.Text("Debug: API + manual send",
+                                        weight=ft.FontWeight.BOLD)],
+               alignment=ft.MainAxisAlignment.START),
+        ft.Card(content=ft.Container(
+            padding=12,
+            content=ft.Column([
+                ft.Row([shot_btn, ping_btn],
+                       alignment=ft.MainAxisAlignment.CENTER),
+                ft.Row([sess_btn, act_btn],
+                       alignment=ft.MainAxisAlignment.CENTER),
+                ft.Row([shots_btn, send_all_btn],
+                       alignment=ft.MainAxisAlignment.CENTER),
+                debug_msg,
+            ], spacing=8),
+        )),
+        ft.Row([debug_count,
+                ft.Row([copy_btn, clear_btn],
+                       alignment=ft.MainAxisAlignment.END)],
+               alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+        debug_log,
+        show_more_btn,
+        debug_bundle_field,
+    ]
+    debug_view.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
+    debug_view.scroll = ft.ScrollMode.ADAPTIVE
+    debug_view.expand = True
+    page.add(home_view, settings_view, debug_view)
     refresh_header()
     refresh_hint()
     refresh_history()
