@@ -20,14 +20,14 @@ def start_background_threads(con, cfg: dict, state: dict, stop: threading.Event)
 
     def workers():
         last_shot = 0.0
-        while not stop.wait(cfg.get("poll_interval_sec", 5)):
+        while not stop.wait(cfg.get("poll_interval_sec", 360)):
             if not state["running"]:
                 continue
             is_idle = watcher.is_idle(cfg.get("idle_after_sec", 180))
             app, title = collect.poll()
             store.add_activity(con, state["sid"], _now(), app, title, int(is_idle))
-            iv = cfg.get("screenshot_interval_sec", 300)
-            if not is_idle and time.time() - last_shot >= iv + random.uniform(0, 30):
+            iv = cfg.get("screenshot_interval_sec", 900)
+            if not is_idle and time.time() - last_shot >= iv + random.uniform(0, 120):
                 p = shots.take(config.data_dir())
                 if p:
                     store.add_screenshot(con, state["sid"], _now(), str(p))

@@ -1,6 +1,6 @@
 # Track Me to the Moon (moon-tracker v1)
 
-Simple team work tracker (Apploye-like): Start/Stop timer, active app + window title every 5s, JPEG screenshot every 5-10 min, offline SQLite queue, background upload to proprietary API.
+Simple team work tracker (Apploye-like): Start/Stop timer, active app + window title every 6 min, JPEG screenshot every ~15 min, offline SQLite queue, background upload to proprietary API.
 
 Title-only (no browser URLs). X11 recommended on Linux (Wayland blocks global window info).
 
@@ -74,10 +74,15 @@ Deleting `tracker.db` resets settings. Timing intervals stay in `config.toml`.
 ## Config keys
 
 ```toml
-screenshot_interval_sec = 300
-poll_interval_sec = 5
+screenshot_interval_sec = 900
+poll_interval_sec = 360
 idle_after_sec = 180
 ```
+
+> Sparse sampling: ~10 activities/hour, ~4 screenshots/hour. Idle/activity
+> granularity is coarse (6-min buckets) by design. Configs still holding the
+> previous defaults (`5` / `300`) auto-migrate to the new values on first
+> start; customized values are left untouched.
 
 If no `api_base` is stored in settings, uploader just keeps queue (offline mode).
 

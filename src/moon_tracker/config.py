@@ -8,9 +8,16 @@ from pathlib import Path
 # (see store.SETTINGS_KEYS); leftover keys in old config.toml files are
 # loaded but never read.
 DEFAULTS = {
+    "screenshot_interval_sec": 900,
+    "poll_interval_sec": 360,
+    "idle_after_sec": 180,
+}
+
+# Previous defaults (pre reduce-capture-rates): migrated to new DEFAULTS on
+# load when matched exactly; any other value is user-customized and kept.
+_OLD_DEFAULTS = {
     "screenshot_interval_sec": 300,
     "poll_interval_sec": 5,
-    "idle_after_sec": 180,
 }
 
 def _migrate_dir(old: Path, new: Path) -> Path:
@@ -50,4 +57,16 @@ def load() -> dict:
             cfg.update(tomllib.load(f))
     except Exception:
         pass  # ponytail: corrupt config -> defaults, don't crash tracker
+    migrated = False
+    for k, old in _OLD_DEFAULTS.items():
+        if cfg.get(k) == old:
+            cfg[k] = DEFAULTS[k]
+            migrated = True
+    if migrated:
+        try:
+            with open(p, "w") as f:
+                for k, v in cfg.items():
+                    f.write(f'{k} = {v!r}\n'.replace("'", '"') if isinstance(v, str) else f"{k} = {v}\n")
+        except Exception:
+            pass  # ponytail: rewrite failure never blocks startup; retried next start
     return cfg
