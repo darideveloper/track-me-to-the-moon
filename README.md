@@ -137,3 +137,23 @@ bash tools/build.sh
 ## Legal
 
 Employee monitoring tool. Show Start/Stop state, get consent before rollout.
+
+---
+
+## Contact
+
+Developed by [Dari Dev Team](https://darideveloper.com)
+
+- 🌐 [darideveloper.com](https://darideveloper.com)
+- 💬 [WhatsApp](https://api.whatsapp.com/send?phone=5214493402622)
+- 📂 [View project in portfolio](https://darideveloper.com/work/track-me-to-the-moon)
+
+---
+
+## Contacto
+
+Desarrollado por [Dari Dev Team](https://darideveloper.com)
+
+- 🌐 [darideveloper.com](https://darideveloper.com)
+- 💬 [WhatsApp](https://api.whatsapp.com/send?phone=5214493402622)
+- 📂 [Ver proyecto en el portafolio](https://darideveloper.com/work/track-me-to-the-moon)
