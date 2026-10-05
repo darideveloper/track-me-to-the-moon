@@ -20,6 +20,9 @@ _OLD_DEFAULTS = {
     "poll_interval_sec": 5,
 }
 
+DATA_DIR_ENV = "MOON_TRACKER_DATA_DIR"
+
+
 def _migrate_dir(old: Path, new: Path) -> Path:
     """One-way move from legacy `worktracker` dirs (keeps sessions + settings)."""
     try:
@@ -35,12 +38,48 @@ def config_path() -> Path:
     p = _migrate_dir(base / "worktracker", base / "moon-tracker") / "config.toml"
     return p
 
-def data_dir() -> Path:
+def default_data_dir() -> Path:
     base = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share"))
     d = _migrate_dir(base / "worktracker", base / "moon-tracker")
     d.mkdir(parents=True, exist_ok=True)
     (d / "shots").mkdir(exist_ok=True)
-    return d
+    return d.resolve()
+
+
+def data_dir(override: str | Path | None = None) -> Path:
+    """Resolve the data dir: flag > MOON_TRACKER_DATA_DIR env > default.
+
+    Relative inputs resolve against cwd; result is absolute with `shots/` created.
+    Zero-arg call keeps today's behavior (env > default).
+    """
+    raw = override if override not in (None, "") else os.environ.get(DATA_DIR_ENV, "")
+    if raw not in (None, ""):
+        d = Path(raw).expanduser()
+        if not d.is_absolute():
+            d = Path.cwd() / d
+        d = d.resolve()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "shots").mkdir(exist_ok=True)
+        return d
+    return default_data_dir()
+
+
+def is_default_dir(p: str | Path) -> bool:
+    try:
+        return Path(p).expanduser().resolve() == default_data_dir()
+    except Exception:
+        return False
+
+
+def short_label(p: str | Path) -> str:
+    """Compact label for window titles: last two path components."""
+    try:
+        parts = Path(p).expanduser().resolve().parts
+        if len(parts) >= 2:
+            return str(Path(*parts[-2:]))
+        return Path(p).name or str(p)
+    except Exception:
+        return str(p)
 
 def load() -> dict:
     cfg = dict(DEFAULTS)

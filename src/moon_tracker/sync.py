@@ -281,7 +281,7 @@ def manual_send(con, cfg: dict, tables=("sessions", "activities", "screenshots")
 
 
 def manual_screenshot(con, cfg: dict, state: dict, timeout: float = 120,
-                      emit=None) -> tuple[str, str, dict | None]:
+                       emit=None, data_dir=None) -> tuple[str, str, dict | None]:
     """Capture now + queue + upload screenshots stage. Returns (status, message, stats).
 
     status is one of "ok" | "refused" | "failed". Attaches to the running
@@ -304,7 +304,7 @@ def manual_screenshot(con, cfg: dict, state: dict, timeout: float = 120,
         from . import config as _config
         from . import shots as _shots
 
-        p = _shots.take(_config.data_dir())
+        p = _shots.take(_config.data_dir(data_dir))
     except Exception:
         p = None
     if not p:

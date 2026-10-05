@@ -14,8 +14,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def start_background_threads(con, cfg: dict, state: dict, stop: threading.Event) -> list:
+def start_background_threads(con, cfg: dict, state: dict, stop: threading.Event,
+                             data_dir=None) -> list:
     """Collector + uploader daemon threads shared by tray and Flet frontends."""
+    from pathlib import Path
+
+    ddir = Path(data_dir) if data_dir is not None else config.data_dir()
     watcher = idle.IdleWatcher()
 
     def workers():
@@ -28,7 +32,7 @@ def start_background_threads(con, cfg: dict, state: dict, stop: threading.Event)
             store.add_activity(con, state["sid"], _now(), app, title, int(is_idle))
             iv = cfg.get("screenshot_interval_sec", 900)
             if not is_idle and time.time() - last_shot >= iv + random.uniform(0, 120):
-                p = shots.take(config.data_dir())
+                p = shots.take(ddir)
                 if p:
                     store.add_screenshot(con, state["sid"], _now(), str(p))
                 last_shot = time.time()
@@ -50,16 +54,17 @@ def _pending_total(con) -> int:
         return -1
 
 
-def _tray_title(con, stopped: bool = True) -> str:
+def _tray_title(con, stopped: bool = True, data_dir=None) -> str:
     """Tray title with pending count + last-sync status (reads ledger, no thread)."""
+    suffix = brand.dev_suffix(data_dir)
     try:
         total = brand.pending_total(store.pending_counts(con))
         last = store.last_sync(con)
         synced = bool(last and not last[6]) and total == 0
-        return brand.tray_title(stopped, total, synced)
+        return brand.tray_title(stopped, total, synced, suffix=suffix)
     except Exception:
         pass
-    return brand.tray_title(stopped, 0, False)
+    return brand.tray_title(stopped, 0, False, suffix=suffix)
 
 
 def _close_flush(con, cfg: dict, timeout: float = 30) -> int:
@@ -101,7 +106,7 @@ def _icon(running: bool):
     return img
 
 
-def run_tray() -> None:
+def run_tray(data_dir=None) -> None:
     import logging
     import signal
 
@@ -112,18 +117,20 @@ def run_tray() -> None:
     # main loop". Silence that logger; we shut down cleanly below.
     logging.getLogger("pystray").setLevel(logging.CRITICAL)
 
+    ddir = config.data_dir(data_dir)
+    print(f"data dir: {ddir}")
     cfg = config.load()
-    con = store.connect(config.data_dir() / "tracker.db")
+    con = store.connect(ddir / "tracker.db")
     state = {"running": False, "sid": None}
     stop = threading.Event()
-    start_background_threads(con, cfg, state, stop)
+    start_background_threads(con, cfg, state, stop, ddir)
 
     def start(icon, _):
         if not state["running"]:
             state["sid"] = store.start_session(con, _now())
             state["running"] = True
             icon.icon = _icon(True)
-            icon.title = _tray_title(con, stopped=False)
+            icon.title = _tray_title(con, stopped=False, data_dir=ddir)
 
     def stop_tracking(icon=None, _=None):
         if state["running"]:
@@ -135,7 +142,7 @@ def run_tray() -> None:
             if icon is not None:
                 try:
                     icon.icon = _icon(False)
-                    icon.title = _tray_title(con, stopped=True)
+                    icon.title = _tray_title(con, stopped=True, data_dir=ddir)
                 except Exception:
                     pass
 
@@ -154,7 +161,7 @@ def run_tray() -> None:
         pystray.MenuItem("Quit", on_quit),
     )
     tray = pystray.Icon(brand.DISPLAY_NAME, _icon(False),
-                        _tray_title(con, stopped=True), menu)
+                        _tray_title(con, stopped=True, data_dir=ddir), menu)
 
     def _quit(signum=None, frame=None):  # Ctrl+C / kill: break Xlib select, exit quietly
         stop_tracking()
@@ -189,19 +196,25 @@ def main() -> None:
     ap.add_argument("--once", action="store_true", help="print one poll and exit")
     ap.add_argument("--shot", action="store_true", help="take one screenshot and exit")
     ap.add_argument("--version", action="store_true", help="print version and exit")
+    ap.add_argument("--data-dir", default=None,
+                    help="isolated data dir for tracker.db + shots "
+                         f"(or {config.DATA_DIR_ENV} env); default is the shared OS dir")
     a = ap.parse_args()
     if a.version:
         from . import version as _version
 
         print(_version.get_version())
-    elif a.once:
+        return
+    ddir = config.data_dir(a.data_dir)
+    print(f"data dir: {ddir}")
+    if a.once:
         print(collect.poll())
     elif a.shot:
-        print(shots.take(config.data_dir()))
+        print(shots.take(ddir))
     else:
         from . import ui
 
-        ui.run()
+        ui.run(ddir)
 
 
 if __name__ == "__main__":

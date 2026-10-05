@@ -71,13 +71,27 @@ def row_moon(uploaded: bool | None, any_pending: bool) -> str:
     return MOON_PENDING if any_pending else MOON_SYNCED
 
 
-def tray_title(stopped: bool, total_pending: int, synced: bool) -> str:
+def dev_suffix(data_dir=None) -> str:
+    """Dev badge suffix for titles, e.g. ` [🧪 dev-data]`; empty on default dir."""
+    if data_dir is None:
+        return ""
+    try:
+        from . import config as _config
+
+        if _config.is_default_dir(data_dir):
+            return ""
+        return f" [🧪 {_config.short_label(data_dir)}]"
+    except Exception:
+        return ""
+
+
+def tray_title(stopped: bool, total_pending: int, synced: bool, suffix: str = "") -> str:
     base = f"{DISPLAY_NAME} [{'Stopped' if stopped else 'Recording'}]"
     if total_pending > 0:
-        return f"{base} \u00b7 {total_pending} pending"
+        return f"{base} \u00b7 {total_pending} pending{suffix}"
     if synced:
-        return f"{base} \u00b7 synced"
-    return base
+        return f"{base} \u00b7 synced{suffix}"
+    return f"{base}{suffix}"
 
 
 def page_themes():

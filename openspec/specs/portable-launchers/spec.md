@@ -2,7 +2,7 @@
 
 ### Requirement: Windows double-click launcher
 
-The system SHALL provide a `run.bat` at repo root that bootstraps and starts the tracker with no manual venv steps.
+The system SHALL provide a `run.bat` at repo root that bootstraps and starts the tracker with no manual venv steps. All CLI arguments SHALL be forwarded to the app, so `run.bat --data-dir dev-data` selects an isolated data dir.
 
 #### Scenario: First run bootstraps everything
 
@@ -29,9 +29,14 @@ The system SHALL provide a `run.bat` at repo root that bootstraps and starts the
 - **WHEN** the checkout branch is not `main`
 - **THEN** the script prints a "not on main" warning and continues to launch without switching branches
 
+#### Scenario: Data-dir flag flows to dev environment on Windows
+
+- **WHEN** the user runs `run.bat --data-dir dev-data`
+- **THEN** the app starts with `<repo>\dev-data` as its data dir (DB + shots isolated) while bootstrap/sync behavior is unchanged
+
 ### Requirement: Linux launcher with session warning
 
-The system SHALL provide an executable `run.sh` at repo root with the same bootstrap flow plus Linux-specific checks.
+The system SHALL provide an executable `run.sh` at repo root with the same bootstrap flow plus Linux-specific checks. All CLI arguments SHALL be forwarded to the app (`python -m moon_tracker "$@"`), so `./run.sh --data-dir dev-data` selects an isolated data dir.
 
 #### Scenario: Wayland warns but continues
 
@@ -47,6 +52,11 @@ The system SHALL provide an executable `run.sh` at repo root with the same boots
 
 - **WHEN** the checkout branch is not `main`
 - **THEN** the script prints a "not on main" warning and continues to launch without switching branches
+
+#### Scenario: Data-dir flag flows to dev environment
+
+- **WHEN** the user runs `./run.sh --data-dir dev-data`
+- **THEN** the app starts with `<repo>/dev-data` as its data dir (DB + shots isolated) while bootstrap/sync behavior is unchanged
 
 ### Requirement: Pull-to-update flow
 

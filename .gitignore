@@ -6,6 +6,7 @@ dist/
 build/
 *.spec
 data/
+dev-data/
 *.db
 *.jpg
 *.log

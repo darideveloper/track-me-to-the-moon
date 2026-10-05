@@ -57,9 +57,12 @@ def compact(event) -> str:
         return "api event"
 
 
-def format_bundle(version: str, pending: dict, last_sync, events: list) -> str:
+def format_bundle(version: str, pending: dict, last_sync, events: list,
+                  data_dir=None) -> str:
     """Paste-ready debug report. Never includes the API token (never stored)."""
     lines = [f"moon-tracker {version or 'unknown'}"]
+    if data_dir is not None:
+        lines.append(f"data dir: {data_dir}")
     try:
         total = int(pending.get("sessions", 0) + pending.get("activities", 0)
                     + pending.get("screenshots", 0))

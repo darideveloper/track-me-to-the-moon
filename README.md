@@ -51,6 +51,12 @@ No separate updater script. The footer shows your version
 
 Diagnostics: `run.sh --once` (one poll, no UI), `run.sh --version`.
 
+Dev while tracking: `./run.sh --data-dir dev-data` (or `MOON_TRACKER_DATA_DIR=dev-data`)
+uses `<repo>/dev-data/tracker.db` + `<repo>/dev-data/shots/` with its own settings triple
+(enter the dev `api_base` / `user_id` / `api_token` in ⚙ once — remembered per dir).
+The window title + footer show `[🧪 …]` plus the path so prod and dev are unmistakable.
+`dev-data/` is git-ignored; never run `git clean -fdx` without `-n` first (it deletes ignored dirs).
+
 Contributors: `uv sync --frozen --extra dev` then `uv run --frozen --extra dev pytest` to run the test suite.
 
 Config, data, and shots dirs are auto-created on first start.

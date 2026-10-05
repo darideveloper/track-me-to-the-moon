@@ -72,14 +72,17 @@ _KNOB_LEFT = _PAD
 _KNOB_RIGHT = _TRACK_W - _KNOB - _PAD
 
 
-def main(page: ft.Page) -> None:
+def main(page: ft.Page, data_dir=None) -> None:
+    ddir = config.data_dir(data_dir)
+    dev = not config.is_default_dir(ddir)
+    label = config.short_label(ddir) if dev else ""
     cfg = config.load()
-    con = store.connect(config.data_dir() / "tracker.db")
+    con = store.connect(ddir / "tracker.db")
     state = {"running": False, "sid": None, "started_at": None}
     stop = threading.Event()
-    start_background_threads(con, cfg, state, stop)
+    start_background_threads(con, cfg, state, stop, ddir)
 
-    page.title = brand.DISPLAY_NAME
+    page.title = brand.DISPLAY_NAME + (f" [🧪 {label}]" if dev else "")
     page.theme, page.dark_theme = brand.page_themes()
     page.theme_mode = ft.ThemeMode.SYSTEM
     if page.window is not None:
@@ -141,7 +144,8 @@ def main(page: ft.Page) -> None:
     settings_hint = ft.Text("Settings incomplete — open ⚙ to finish setup.",
                             size=12, visible=False, color=ft.Colors.AMBER)
     history = ft.ListView(expand=True, spacing=4)
-    version_footer = ft.Text(version_footer_text(), size=10,
+    footer_text = version_footer_text() + (f" · {ddir}" if dev else "")
+    version_footer = ft.Text(footer_text, size=10,
                              color=brand.DARK_MUTED,
                              text_align=ft.TextAlign.CENTER)
 
@@ -365,7 +369,8 @@ def main(page: ft.Page) -> None:
                 from . import sync as _sync
 
                 if kind == "shot":
-                    _status, msg, _stats = _sync.manual_screenshot(con, cfg, state)
+                    _status, msg, _stats = _sync.manual_screenshot(con, cfg, state,
+                                                                   data_dir=ddir)
                 elif kind == "ping":
                     res = _sync.test_connection(con)
                     label = res.status if res.status is not None else res.error
@@ -415,7 +420,7 @@ def main(page: ft.Page) -> None:
         try:
             bundle = debuglog.format_bundle(
                 version_footer_text(), store.pending_counts(con),
-                store.last_sync(con), debuglog.recent())
+                store.last_sync(con), debuglog.recent(), ddir)
         except Exception as ex:
             _snack(page, f"Bundle failed: {ex}")
             return
@@ -656,20 +661,26 @@ def main(page: ft.Page) -> None:
     page.run_task(ticker)
 
 
-def run() -> None:
+def run(data_dir=None) -> None:
+    import functools
+
+    ddir = config.data_dir(data_dir)
+    dev = not config.is_default_dir(ddir)
     if sys.platform == "linux":
         try:
             os.environ.setdefault("FLET_APP_ID", desktop_entry.APP_ID)
-            desktop_entry.patch_client_icon()
-            desktop_entry.ensure_installed(desktop_entry.repo_root())
+            if not dev:
+                desktop_entry.patch_client_icon()
+                desktop_entry.ensure_installed(desktop_entry.repo_root())
         except Exception:
             pass  # ponytail: icon is decoration, never break startup
     elif sys.platform == "darwin":
         try:
-            desktop_entry.ensure_macos_bundle_icon()
+            if not dev:
+                desktop_entry.ensure_macos_bundle_icon()
         except Exception:
             pass  # ponytail: icon is decoration, never break startup
-    ft.run(main)
+    ft.run(functools.partial(main, data_dir=ddir))
 
 
 if __name__ == "__main__":
