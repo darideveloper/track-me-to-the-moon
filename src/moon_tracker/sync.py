@@ -17,6 +17,51 @@ MAX_RUN_SEC = 120
 SCREENSHOT_TTL_DAYS = 7
 
 
+class SyncControl:
+    """Runtime-only gate for scheduled sync; enabled on every app start."""
+
+    def __init__(self) -> None:
+        self._enabled = threading.Event()
+        self._enabled.set()
+        self._wake = threading.Event()
+        self._drain_now = threading.Event()
+
+    def is_enabled(self) -> bool:
+        return self._enabled.is_set()
+
+    def set_enabled(self, enabled: bool) -> None:
+        if enabled:
+            was_paused = not self._enabled.is_set()
+            self._enabled.set()
+            if was_paused:
+                self._drain_now.set()
+        else:
+            self._enabled.clear()
+        self._wake.set()
+
+    def wait_for_drain(self, stop: threading.Event, interval: float) -> bool:
+        """Wait for the next allowed drain; resume wakes the loop immediately."""
+        deadline = time.monotonic() + max(0.0, interval)
+        while not stop.is_set():
+            if not self._enabled.is_set():
+                self._wake.wait(0.2)
+                self._wake.clear()
+                continue
+            if self._drain_now.is_set():
+                self._drain_now.clear()
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return True
+            if self._wake.wait(remaining):
+                self._wake.clear()
+                if self._enabled.is_set():
+                    if self._drain_now.is_set():
+                        self._drain_now.clear()
+                        return True
+        return False
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -337,9 +382,10 @@ def test_connection(con, emit=None) -> api.SyncResult:
     return api.test_connection(base, token, emit=emit)
 
 
-def loop(con, cfg: dict, stop: threading.Event, notify_fn=None) -> None:
+def loop(con, cfg: dict, stop: threading.Event, notify_fn=None, control: SyncControl | None = None) -> None:
     interval = cfg.get("sync_interval_sec", SYNC_INTERVAL_SEC)
-    while not stop.wait(float(interval) + random.uniform(-JITTER_SEC, JITTER_SEC)):
+    control = control or SyncControl()
+    while control.wait_for_drain(stop, float(interval) + random.uniform(-JITTER_SEC, JITTER_SEC)):
         try:
             drain(con, cfg, reason="tick", notify_fn=notify_fn)
         except Exception:

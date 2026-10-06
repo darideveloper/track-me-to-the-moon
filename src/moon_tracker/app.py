@@ -39,7 +39,8 @@ def start_background_threads(con, cfg: dict, state: dict, stop: threading.Event,
 
     threads = [
         threading.Thread(target=workers, daemon=True),
-        threading.Thread(target=sync.loop, args=(con, cfg, stop), daemon=True),
+        threading.Thread(target=sync.loop, args=(con, cfg, stop),
+                         kwargs={"control": state.get("sync_control")}, daemon=True),
     ]
     for t in threads:
         t.start()

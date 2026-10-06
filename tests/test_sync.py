@@ -1,3 +1,4 @@
+import threading
 import time
 
 from moon_tracker import api, store, sync
@@ -76,6 +77,28 @@ def test_offline_queues_quietly(tmp_path):
     stats = sync.drain(con, {}, reason="test", notify_fn=lambda *a: (_ for _ in ()).throw(AssertionError()))
     assert stats["skipped"] is True
     con.close()
+
+
+def test_sync_control_defaults_enabled_and_pauses_scheduled_drain():
+    control = sync.SyncControl()
+    stop = threading.Event()
+    assert control.is_enabled()
+    control.set_enabled(False)
+    assert not control.is_enabled()
+    stop.set()
+    assert control.wait_for_drain(stop, 0) is False
+
+
+def test_sync_control_resume_wakes_waiter_immediately():
+    control = sync.SyncControl()
+    stop = threading.Event()
+    control.set_enabled(False)
+    result = []
+    waiter = threading.Thread(target=lambda: result.append(control.wait_for_drain(stop, 60)))
+    waiter.start()
+    control.set_enabled(True)
+    waiter.join(timeout=2)
+    assert result == [True]
 
 
 def test_flush_deadline_and_ledger(tmp_path, monkeypatch):
