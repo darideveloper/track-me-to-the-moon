@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 import flet as ft
 
-from . import brand, config, debuglog, desktop_entry, store
+from . import brand, config, debuglog, desktop_entry, store, sync
 from . import version as _version
 from .app import _now, start_background_threads
 
@@ -54,6 +54,28 @@ def format_session_row(started_at: str, ended_at: str | None) -> tuple[str, str]
     return title, subtitle
 
 
+async def _run_ticker_until_closed(closing: threading.Event, on_tick,
+                                   sleep_fn=asyncio.sleep) -> None:
+    """Run UI ticks until shutdown, never ticking after the close signal."""
+    tick = 0
+    while not closing.is_set():
+        await sleep_fn(1)
+        if closing.is_set():
+            return
+        tick += 1
+        on_tick(tick)
+
+
+def _begin_close(closing: threading.Event, lock: threading.Lock, lifecycle: dict) -> bool:
+    """Mark shutdown once; return whether this caller owns the close sequence."""
+    with lock:
+        if lifecycle["close_started"]:
+            return False
+        lifecycle["close_started"] = True
+    closing.set()
+    return True
+
+
 def _snack(page, message: str) -> None:
     """Best-effort SnackBar (window may already be closing)."""
     try:
@@ -78,8 +100,13 @@ def main(page: ft.Page, data_dir=None) -> None:
     label = config.short_label(ddir) if dev else ""
     cfg = config.load()
     con = store.connect(ddir / "tracker.db")
-    state = {"running": False, "sid": None, "started_at": None}
+    state = {"running": False, "sid": None, "started_at": None,
+             "sync_control": sync.SyncControl()}
     stop = threading.Event()
+    closing = threading.Event()
+    close_lock = threading.Lock()
+    lifecycle = {"close_started": False}
+    ticker_task = None
     start_background_threads(con, cfg, state, stop, ddir)
 
     page.title = brand.DISPLAY_NAME + (f" [🧪 {label}]" if dev else "")
@@ -105,6 +132,9 @@ def main(page: ft.Page, data_dir=None) -> None:
     status_dot = ft.Container(width=12, height=12, border_radius=6, bgcolor=ft.Colors.GREY)
     status_text = ft.Text("Stopped", color=brand.MOON_WHITE, size=13)
     sync_text = ft.Text("", size=11, color=brand.DARK_MUTED, text_align=ft.TextAlign.CENTER)
+    sync_label = ft.Text("Sync on", size=11, color=brand.MOON_WHITE)
+    sync_btn = ft.Container(content=sync_label, padding=ft.Padding.symmetric(horizontal=7, vertical=3),
+                            border_radius=8, bgcolor=brand.ACCENT_SKY)
     theme_btn = ft.IconButton(icon=ft.Icons.DARK_MODE, tooltip="Toggle light / dark",
                               icon_color=brand.MOON_WHITE)
     gear_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings",
@@ -114,7 +144,8 @@ def main(page: ft.Page, data_dir=None) -> None:
     header = ft.Container(
         bgcolor=brand.NIGHT_SKY, border_radius=16, padding=12,
         content=ft.Column([
-            ft.Row([ft.Row([gear_btn, debug_btn], spacing=0), stars, theme_btn],
+            ft.Row([ft.Row([gear_btn, debug_btn], spacing=0), stars,
+                    ft.Row([sync_btn, theme_btn], spacing=0)],
                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
             header_moon,
             timer_label,
@@ -185,6 +216,20 @@ def main(page: ft.Page, data_dir=None) -> None:
         toggle_caption.value = brand.LAND_LABEL if running else brand.LAUNCH_LABEL
         toggle_caption.tooltip = brand.LAND_TOOLTIP if running else brand.LAUNCH_TOOLTIP
         toggle_icon.name = ft.Icons.FLIGHT_LAND if running else ft.Icons.FLIGHT_TAKEOFF
+
+    def refresh_sync_control() -> None:
+        enabled = state["sync_control"].is_enabled()
+        sync_label.value = "Sync on" if enabled else "Sync paused"
+        sync_btn.bgcolor = brand.ACCENT_SKY if enabled else ft.Colors.GREY_700
+
+    def on_toggle_sync(_=None) -> None:
+        control = state["sync_control"]
+        control.set_enabled(not control.is_enabled())
+        refresh_sync_control()
+        try:
+            page.update()
+        except Exception:
+            pass
 
     base_field = ft.TextField(label="API base URL", hint_text="https://api.example.com",
                               dense=True)
@@ -471,6 +516,8 @@ def main(page: ft.Page, data_dir=None) -> None:
     debug_view = ft.Column([], visible=False)
 
     def refresh_history() -> None:
+        if closing.is_set():
+            return
         history.controls.clear()
         rows = store.list_sessions(con, 10)
         try:
@@ -534,29 +581,37 @@ def main(page: ft.Page, data_dir=None) -> None:
             on_start()
 
     track.on_click = on_toggle
+    sync_btn.on_click = on_toggle_sync
 
-    async def ticker() -> None:
+    def on_tick(tick: int) -> None:
         # ponytail: single UI-update point on the page event loop (Flet 1.x
         # page.run_task). Raw threads + page.update() queue/delay updates.
-        tick = 0
-        while True:
-            await asyncio.sleep(1)
-            if state["running"] and state["started_at"] is not None:
-                elapsed = (datetime.now(timezone.utc) - state["started_at"]).total_seconds()
-                timer_label.value = format_hms(elapsed)
-                page.update()
-            tick += 1
-            if tick % 5 == 0:
-                refresh_history()
-            if tick % 2 == 0:
-                try:
-                    if debug_view.visible:
-                        refresh_debug_log()
-                        page.update()
-                except Exception:
-                    pass
+        if state["running"] and state["started_at"] is not None:
+            elapsed = (datetime.now(timezone.utc) - state["started_at"]).total_seconds()
+            timer_label.value = format_hms(elapsed)
+            page.update()
+        if tick % 5 == 0:
+            refresh_history()
+        if tick % 2 == 0:
+            try:
+                if debug_view.visible:
+                    refresh_debug_log()
+                    page.update()
+            except Exception:
+                pass
+
+    async def ticker() -> None:
+        await _run_ticker_until_closed(closing, on_tick)
 
     def on_close(_=None) -> None:
+        nonlocal ticker_task
+        if not _begin_close(closing, close_lock, lifecycle):
+            return
+        if ticker_task is not None:
+            try:
+                ticker_task.cancel()
+            except Exception:
+                pass
         on_stop()
         stop.set()
         try:
@@ -656,9 +711,10 @@ def main(page: ft.Page, data_dir=None) -> None:
     debug_view.expand = True
     page.add(home_view, settings_view, debug_view)
     refresh_header()
+    refresh_sync_control()
     refresh_hint()
     refresh_history()
-    page.run_task(ticker)
+    ticker_task = page.run_task(ticker)
 
 
 def run(data_dir=None) -> None:

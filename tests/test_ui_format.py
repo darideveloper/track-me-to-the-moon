@@ -1,3 +1,6 @@
+import asyncio
+import threading
+
 from moon_tracker import ui
 
 
@@ -21,6 +24,28 @@ def test_format_session_row_closed():
     )
     assert "→" in title and "now" not in title
     assert "1h 30m" in subtitle
+
+
+def test_ticker_does_not_refresh_after_close_begins():
+    closing = threading.Event()
+    ticks = []
+
+    async def sleep_then_close(_):
+        closing.set()
+
+    asyncio.run(ui._run_ticker_until_closed(closing, ticks.append, sleep_then_close))
+
+    assert ticks == []
+
+
+def test_begin_close_is_idempotent():
+    closing = threading.Event()
+    lifecycle = {"close_started": False}
+    lock = threading.Lock()
+
+    assert ui._begin_close(closing, lock, lifecycle) is True
+    assert closing.is_set()
+    assert ui._begin_close(closing, lock, lifecycle) is False
 
 
 def test_format_session_row_running():
