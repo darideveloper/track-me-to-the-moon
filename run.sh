@@ -4,6 +4,29 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+diagnostic=0
+for arg in "$@"; do
+  case "$arg" in
+    --once|--shot|--version) diagnostic=1 ;;
+  esac
+done
+
+# Graphical starts detach from the launcher terminal. The child inherits this
+# marker, so it performs bootstrap once and sends output to the same log.
+if [ "${MOON_TRACKER_HIDDEN_LAUNCH:-}" != "1" ] \
+  && [ "$diagnostic" -eq 0 ] \
+  && [ "${MOON_TRACKER_FOREGROUND:-}" != "1" ]; then
+  log_dir="${XDG_STATE_HOME:-$HOME/.local/state}/moon-tracker"
+  mkdir -p "$log_dir"
+  export MOON_TRACKER_HIDDEN_LAUNCH=1
+  if command -v setsid >/dev/null 2>&1; then
+    nohup setsid "$0" "$@" </dev/null >> "$log_dir/launcher.log" 2>&1 &
+  else
+    nohup "$0" "$@" </dev/null >> "$log_dir/launcher.log" 2>&1 &
+  fi
+  exit 0
+fi
+
 if ! command -v git >/dev/null 2>&1; then
   echo "[moon-tracker] git not found. Install it first:" >&2
   echo "  Debian/Ubuntu: sudo apt install git" >&2

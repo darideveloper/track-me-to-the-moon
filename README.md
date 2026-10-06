@@ -27,8 +27,11 @@ cd moon-tracker
 
 The launcher checks git + Python 3.10+, installs `uv` if missing
 (`uv python install 3.12` fallback), syncs exact deps from `uv.lock`,
-warns if you're not on `main`, then opens the tracker. Keep the
-terminal open — logs show there.
+warns if you're not on `main`, then opens the tracker. On Linux, graphical
+launches detach from the terminal and write output to
+`$XDG_STATE_HOME/moon-tracker/launcher.log` (default:
+`~/.local/state/moon-tracker/launcher.log`). Commands such as `--once`,
+`--shot`, and `--version` keep their terminal output.
 
 First run downloads ~100MB (Flet/Flutter) — looks stuck, isn't.
 Windows may show a firewall prompt for the tracker window; that's expected.

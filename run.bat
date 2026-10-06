@@ -4,6 +4,13 @@ rem Double-click to start. Update with: git pull --ff-only
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 
+set "MOON_TRACKER_DIAGNOSTIC="
+for %%A in (%*) do (
+  if /I "%%~A"=="--once" set "MOON_TRACKER_DIAGNOSTIC=1"
+  if /I "%%~A"=="--shot" set "MOON_TRACKER_DIAGNOSTIC=1"
+  if /I "%%~A"=="--version" set "MOON_TRACKER_DIAGNOSTIC=1"
+)
+
 where git >nul 2>nul
 if errorlevel 1 (
   echo [moon-tracker] git not found. Install it first:
