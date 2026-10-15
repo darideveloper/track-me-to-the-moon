@@ -22,13 +22,20 @@ git clone <repo-url> moon-tracker
 cd moon-tracker
 ```
 
-- Windows: double-click `run.bat`
+- Windows: double-click `run.vbs` (no terminal); `run.bat` remains available for diagnostics
 - Linux: `./run.sh` (make executable once: `chmod +x run.sh`)
 
 The launcher checks git + Python 3.10+, installs `uv` if missing
 (`uv python install 3.12` fallback), syncs exact deps from `uv.lock`,
-warns if you're not on `main`, then opens the tracker. Keep the
-terminal open — logs show there.
+warns if you're not on `main`, then opens the tracker. On Windows, normal
+starts run in the background and write one log per launch to
+`%LOCALAPPDATA%\moon-tracker\logs\YYYY-MM-DD_HH-mm-ss-fff.log`. On Linux, graphical launches
+detach from the terminal and write output to
+`$XDG_STATE_HOME/moon-tracker/launcher.log` (default:
+`~/.local/state/moon-tracker/launcher.log`). Commands such as `--once`,
+`--shot`, and `--version` keep their terminal output. Set
+`MOON_TRACKER_FOREGROUND=1` before `run.bat` to troubleshoot a normal Windows
+launch in the terminal.
 
 First run downloads ~100MB (Flet/Flutter) — looks stuck, isn't.
 Windows may show a firewall prompt for the tracker window; that's expected.
