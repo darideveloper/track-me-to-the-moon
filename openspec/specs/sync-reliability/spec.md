@@ -68,7 +68,7 @@ The system SHALL raise an OS-level notification on sync failure at most once per
 
 ### Requirement: Screenshot retention and cleanup
 
-The system SHALL keep uploaded screenshot JPEGs for 7 days after ack, then a daily cleanup pass deletes the files and their rows; unsent rows and files are never auto-deleted.
+The system SHALL keep uploaded screenshot JPEGs for 7 days after ack, then a daily cleanup pass deletes the files and their rows; unsent rows and files are never auto-deleted. The daily cleanup pass SHALL run on its own daily gate independent of upload activity, including while the sync-pause gate is engaged.
 
 #### Scenario: Post-ack retention
 
@@ -79,6 +79,11 @@ The system SHALL keep uploaded screenshot JPEGs for 7 days after ack, then a dai
 
 - **WHEN** a screenshot was acked 8 days ago
 - **THEN** the daily cleanup deletes its JPEG file and removes its row
+
+#### Scenario: Cleanup runs while paused
+
+- **WHEN** pause has been engaged for 3 days and an acked screenshot passes 7 days old
+- **THEN** the next daily cleanup pass deletes its JPEG file and removes its row without issuing any upload
 
 ### Requirement: Thread-safe store access
 

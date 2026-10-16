@@ -55,11 +55,14 @@ def _pending_total(con) -> int:
         return -1
 
 
-def _tray_title(con, stopped: bool = True, data_dir=None) -> str:
+def _tray_title(con, stopped: bool = True, data_dir=None, paused: bool = False) -> str:
     """Tray title with pending count + last-sync status (reads ledger, no thread)."""
     suffix = brand.dev_suffix(data_dir)
     try:
         total = brand.pending_total(store.pending_counts(con))
+        if paused:
+            base = brand.tray_title(stopped, 0, False)
+            return f"{base} \u00b7 {brand.paused_label(total)}{suffix}"
         last = store.last_sync(con)
         synced = bool(last and not last[6]) and total == 0
         return brand.tray_title(stopped, total, synced, suffix=suffix)
@@ -68,9 +71,29 @@ def _tray_title(con, stopped: bool = True, data_dir=None) -> str:
     return brand.tray_title(stopped, 0, False, suffix=suffix)
 
 
-def _close_flush(con, cfg: dict, timeout: float = 30) -> int:
+def _new_tray_state() -> dict:
+    """Tray-local mutable state (own SyncControl, shared with the sync loop)."""
+    return {"running": False, "sid": None, "sync_control": sync.SyncControl()}
+
+
+def _sync_menu_label(state: dict) -> str:
+    """Dynamic tray menu text for the pause toggle."""
+    try:
+        control = state.get("sync_control")
+        if control is not None and not control.is_enabled():
+            return "Resume sync"
+    except Exception:
+        pass
+    return "Pause sync"
+
+
+def _close_flush(con, cfg: dict, timeout: float = 30, control=None) -> int:
     """Blocking close flush with console message. Returns remaining pending."""
     try:
+        kept = sync.kept_while_paused(con, control)
+        if kept is not None:
+            print(f"Sync paused \u2014 {kept} items kept for next start")
+            return kept
         total = _pending_total(con)
         if total > 0:
             print(f"Syncing… {total} items left (up to {int(timeout)}s)")
@@ -122,16 +145,22 @@ def run_tray(data_dir=None) -> None:
     print(f"data dir: {ddir}")
     cfg = config.load()
     con = store.connect(ddir / "tracker.db")
-    state = {"running": False, "sid": None}
+    state = _new_tray_state()
     stop = threading.Event()
     start_background_threads(con, cfg, state, stop, ddir)
+
+    def _paused() -> bool:
+        try:
+            return not state["sync_control"].is_enabled()
+        except Exception:
+            return False
 
     def start(icon, _):
         if not state["running"]:
             state["sid"] = store.start_session(con, _now())
             state["running"] = True
             icon.icon = _icon(True)
-            icon.title = _tray_title(con, stopped=False, data_dir=ddir)
+            icon.title = _tray_title(con, stopped=False, data_dir=ddir, paused=_paused())
 
     def stop_tracking(icon=None, _=None):
         if state["running"]:
@@ -143,14 +172,24 @@ def run_tray(data_dir=None) -> None:
             if icon is not None:
                 try:
                     icon.icon = _icon(False)
-                    icon.title = _tray_title(con, stopped=True, data_dir=ddir)
+                    icon.title = _tray_title(con, stopped=True, data_dir=ddir, paused=_paused())
                 except Exception:
                     pass
+
+    def toggle_sync(icon=None, _=None):
+        control = state["sync_control"]
+        control.set_enabled(not control.is_enabled())
+        if icon is not None:
+            try:
+                icon.title = _tray_title(con, stopped=not state["running"],
+                                        data_dir=ddir, paused=_paused())
+            except Exception:
+                pass
 
     def on_quit(icon, _):
         stop_tracking(icon, _)
         stop.set()
-        _close_flush(con, cfg)
+        _close_flush(con, cfg, control=state["sync_control"])
         try:
             icon.stop()
         except Exception:
@@ -159,15 +198,17 @@ def run_tray(data_dir=None) -> None:
     menu = pystray.Menu(
         pystray.MenuItem("Launch", start),
         pystray.MenuItem("Land", stop_tracking),
+        pystray.MenuItem(lambda icon: _sync_menu_label(state), toggle_sync),
         pystray.MenuItem("Quit", on_quit),
     )
     tray = pystray.Icon(brand.DISPLAY_NAME, _icon(False),
-                        _tray_title(con, stopped=True, data_dir=ddir), menu)
+                        _tray_title(con, stopped=True, data_dir=ddir,
+                                    paused=not state["sync_control"].is_enabled()), menu)
 
     def _quit(signum=None, frame=None):  # Ctrl+C / kill: break Xlib select, exit quietly
         stop_tracking()
         stop.set()
-        _close_flush(con, cfg)
+        _close_flush(con, cfg, control=state["sync_control"])
         try:
             tray.stop()
         except Exception:
@@ -185,7 +226,7 @@ def run_tray(data_dir=None) -> None:
     finally:
         stop_tracking()
         stop.set()
-        _close_flush(con, cfg)
+        _close_flush(con, cfg, control=state["sync_control"])
         try:
             con.close()
         except Exception:

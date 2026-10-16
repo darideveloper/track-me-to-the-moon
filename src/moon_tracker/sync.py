@@ -15,6 +15,8 @@ CHUNK_JSON = 100
 MAX_CHUNKS_PER_RUN = 10
 MAX_RUN_SEC = 120
 SCREENSHOT_TTL_DAYS = 7
+# Paused-loop slice: retention gate re-checked this often during long pauses.
+PAUSED_SLICE_SEC = 60.0
 
 
 class SyncControl:
@@ -38,6 +40,21 @@ class SyncControl:
         else:
             self._enabled.clear()
         self._wake.set()
+
+    def wait_while_paused(self, stop: threading.Event, timeout: float) -> None:
+        """Sleep up to timeout while paused; resume/stop wakes early.
+
+        Companion to wait_for_drain for code paths (e.g. the retention
+        cleanup slice) that must stay reachable during a long pause.
+        Never drains; never consumes _drain_now.
+        """
+        deadline = time.monotonic() + max(0.0, timeout)
+        while not stop.is_set() and not self._enabled.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            self._wake.wait(min(remaining, 0.2))
+            self._wake.clear()
 
     def wait_for_drain(self, stop: threading.Event, interval: float) -> bool:
         """Wait for the next allowed drain; resume wakes the loop immediately."""
@@ -116,12 +133,16 @@ def _drain_json(
     stats: dict,
     deadline: float | None,
     chunks_used: list[int],
+    control: SyncControl | None = None,
 ) -> bool:
     """Drain one JSON table in chunks. Returns False to stop the whole run."""
     while chunks_used[0] < MAX_CHUNKS_PER_RUN and not _deadline_exceeded(deadline):
         rows = fetch(con, CHUNK_JSON)
         if not rows:
             return True
+        if control is not None and not control.is_enabled():
+            stats["paused"] = True  # preemptive pause: rows stay pending, no POST
+            return False
         ids = [r[0] for r in rows]
         items = build_items(rows)
         res = post(items)
@@ -144,12 +165,15 @@ def _drain_json(
 
 
 def drain(con, cfg: dict, reason: str = "tick", deadline: float | None = None,
-          notify_fn=None, emit=None, tables=None) -> dict:
+          notify_fn=None, emit=None, tables=None,
+          control: SyncControl | None = None) -> dict:
     """One bounded sync run. Never raises; always writes a ledger row.
 
     emit: called with one api.ApiEvent per HTTP attempt (defaults to the
       debuglog ring). tables: subset of {"sessions","activities","screenshots"}
-      to drain (None = all, same as before).
+      to drain (None = all, same as before). control: pause gate; when
+      paused, no new POST is issued (in-flight POSTs finish normally).
+      None (default) means unconstrained.
     """
     from . import store
 
@@ -164,7 +188,8 @@ def drain(con, cfg: dict, reason: str = "tick", deadline: float | None = None,
     t0 = time.time()
     started = _now()
     stats = {"sent_sessions": 0, "sent_activities": 0, "sent_screenshots": 0,
-             "error": "", "failed": False, "auth_error": False, "skipped": False}
+             "error": "", "failed": False, "auth_error": False, "skipped": False,
+             "paused": False}
     try:
         s = store.get_settings_dict(con)
         base, token, user = s.get("api_base", ""), s.get("api_token", ""), s.get("user_id", "")
@@ -191,7 +216,7 @@ def drain(con, cfg: dict, reason: str = "tick", deadline: float | None = None,
                     for r in rows
                 ],
                 lambda items: _post_with_emit(api.post_sessions, base, token, items, emit),
-                "sent_sessions", stats, deadline, chunks,
+                "sent_sessions", stats, deadline, chunks, control,
             )
         if ok and "activities" in wanted:
             ok = _drain_json(
@@ -202,7 +227,7 @@ def drain(con, cfg: dict, reason: str = "tick", deadline: float | None = None,
                     for r in rows
                 ],
                 lambda items: _post_with_emit(api.post_activities, base, token, items, emit),
-                "sent_activities", stats, deadline, chunks,
+                "sent_activities", stats, deadline, chunks, control,
             )
         if ok and "screenshots" in wanted:
             while chunks[0] < MAX_CHUNKS_PER_RUN and not _deadline_exceeded(deadline):
@@ -210,6 +235,9 @@ def drain(con, cfg: dict, reason: str = "tick", deadline: float | None = None,
                     break
                 rows = store.pending_screenshots(con, 1)
                 if not rows:
+                    break
+                if control is not None and not control.is_enabled():
+                    stats["paused"] = True  # preemptive pause: shot stays pending
                     break
                 sid, session_id, ts, path = rows[0]
                 meta = {"client_id": f"screenshot:{sid}", "session_id": session_id,
@@ -228,7 +256,14 @@ def drain(con, cfg: dict, reason: str = "tick", deadline: float | None = None,
                 break
         if _deadline_exceeded(deadline) or time.time() - t0 >= MAX_RUN_SEC:
             stats["error"] = stats["error"] or "run budget exceeded, remainder deferred"
-        _maybe_cleanup(con)
+        if stats.get("paused") and not stats.get("error"):
+            try:
+                c = store.pending_counts(con)
+                remaining = c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+            except Exception:
+                remaining = -1
+            stats["error"] = "paused — remainder deferred" if remaining else ""
+        run_retention_cleanup_if_due(con)
     except Exception as e:  # never break the loop thread on unexpected errors
         stats["error"] = str(e)[:200]
         stats["failed"] = True
@@ -257,8 +292,12 @@ def _default_notify(con, kind: str, title: str, message: str) -> bool:
     return notify.send(con, kind, title, message)
 
 
-def _maybe_cleanup(con) -> None:
-    """Delete acked screenshot files+rows older than TTL (daily gate)."""
+def run_retention_cleanup_if_due(con) -> None:
+    """Delete acked screenshot files+rows older than TTL (daily gate).
+
+    Standalone entry point so the retention pass stays reachable while
+    paused; never touches unsent rows. Same gate as before.
+    """
     from . import store
 
     try:
@@ -286,6 +325,28 @@ def _maybe_cleanup(con) -> None:
         pass
 
 
+def _maybe_cleanup(con) -> None:
+    """Back-compat alias for run_retention_cleanup_if_due."""
+    run_retention_cleanup_if_due(con)
+
+
+def kept_while_paused(con, control: SyncControl | None) -> int | None:
+    """Pending total when the gate is paused (caller should skip uploading).
+
+    Returns None when sync is enabled (or no control), so callers can
+    branch: skip + report vs. proceed. Never raises.
+    """
+    from . import store
+
+    try:
+        if control is not None and not control.is_enabled():
+            c = store.pending_counts(con)
+            return c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+    except Exception:
+        pass
+    return None
+
+
 def cleanup_screenshots(con, days: int = SCREENSHOT_TTL_DAYS) -> int:
     """Testable retention cleanup. Returns rows removed. Never touches unsent rows."""
     import os as _os
@@ -305,12 +366,22 @@ def cleanup_screenshots(con, days: int = SCREENSHOT_TTL_DAYS) -> int:
 
 
 def flush(con, cfg: dict, timeout: float = 30, reason: str = "close", notify_fn=None,
-          emit=None, tables=None) -> int:
-    """Blocking drain with hard deadline. Returns remaining pending count."""
+          emit=None, tables=None, control: SyncControl | None = None) -> int:
+    """Blocking drain with hard deadline. Returns remaining pending count.
+
+    When the pause gate is engaged, skips the drain and returns the kept
+    count (callers report it instead of uploading).
+    """
     from . import store
 
+    if kept_while_paused(con, control) is not None:
+        try:
+            c = store.pending_counts(con)
+            return c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
+        except Exception:
+            return -1
     drain(con, cfg, reason=reason, deadline=time.time() + timeout,
-          notify_fn=notify_fn, emit=emit, tables=tables)
+          notify_fn=notify_fn, emit=emit, tables=tables, control=control)
     try:
         c = store.pending_counts(con)
         return c.get("sessions", 0) + c.get("activities", 0) + c.get("screenshots", 0)
@@ -320,7 +391,11 @@ def flush(con, cfg: dict, timeout: float = 30, reason: str = "close", notify_fn=
 
 def manual_send(con, cfg: dict, tables=("sessions", "activities", "screenshots"),
                 timeout: float = 120, emit=None) -> dict:
-    """Manual force-submit for the debug panel. Same code path as a tick."""
+    """Manual force-submit for the debug panel. Same code path as a tick.
+
+    Explicit user override: intentionally bypasses the pause gate
+    (control=None); see the sync-pause spec.
+    """
     return drain(con, cfg, reason="manual", deadline=time.time() + timeout,
                 emit=emit, tables=set(tables))
 
@@ -331,6 +406,9 @@ def manual_screenshot(con, cfg: dict, state: dict, timeout: float = 120,
 
     status is one of "ok" | "refused" | "failed". Attaches to the running
     session when recording, else the most recent session; refuses when none exists.
+
+    Explicit user override: intentionally bypasses the pause gate; see the
+    sync-pause spec.
     """
     from . import store
 
@@ -385,11 +463,24 @@ def test_connection(con, emit=None) -> api.SyncResult:
 def loop(con, cfg: dict, stop: threading.Event, notify_fn=None, control: SyncControl | None = None) -> None:
     interval = cfg.get("sync_interval_sec", SYNC_INTERVAL_SEC)
     control = control or SyncControl()
-    while control.wait_for_drain(stop, float(interval) + random.uniform(-JITTER_SEC, JITTER_SEC)):
+    while not stop.is_set():
         try:
-            drain(con, cfg, reason="tick", notify_fn=notify_fn)
+            run_retention_cleanup_if_due(con)
         except Exception:
             pass
+        if not control.is_enabled():
+            # Paused: no drain possible; bounded slice keeps the daily
+            # cleanup above reachable, resume wakes early for one
+            # immediate drain via _drain_now below.
+            control.wait_while_paused(stop, PAUSED_SLICE_SEC)
+            continue
+        if control.wait_for_drain(stop, float(interval) + random.uniform(-JITTER_SEC, JITTER_SEC)):
+            if not control.is_enabled():
+                continue  # pause landed after the gate opened; per-chunk checks back this up
+            try:
+                drain(con, cfg, reason="tick", notify_fn=notify_fn, control=control)
+            except Exception:
+                pass
 
 
 # Back-compat for the pre-outbox uploader (tests/callers): drain fully, return ok.

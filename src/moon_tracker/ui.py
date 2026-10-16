@@ -191,6 +191,9 @@ def main(page: ft.Page, data_dir=None) -> None:
         try:
             c = store.pending_counts(con)
             total = brand.pending_total(c)
+            if not state["sync_control"].is_enabled():
+                sync_text.value = brand.paused_label(total)
+                return
             last = store.last_sync(con)
             err = last[6] if last else None
             st = brand.sync_state(total, err)
@@ -621,18 +624,25 @@ def main(page: ft.Page, data_dir=None) -> None:
                 total = brand.pending_total(store.pending_counts(con))
             except Exception:
                 total = -1
-            if total > 0:
-                sync_text.value = f"Syncing… {total} items"
-                try:
-                    page.update()
-                except Exception:
-                    pass
-            remaining = _sync.flush(con, cfg, timeout=30, reason="close")
-            if remaining > 0:
-                sync_text.value = f"{remaining} items remain, retry next start"
-                _snack(page, f"Sync incomplete: {remaining} items will retry next start")
-            elif remaining == 0:
-                sync_text.value = f"{brand.MOON_SYNCED} synced"
+            kept = _sync.kept_while_paused(con, state["sync_control"])
+            if kept is not None:
+                sync_text.value = f"\u23f8 Sync paused \u2014 {kept} items kept for next start"
+                _snack(page, f"Sync paused: {kept} items will retry next start")
+                remaining = kept
+            else:
+                if total > 0:
+                    sync_text.value = f"Syncing… {total} items"
+                    try:
+                        page.update()
+                    except Exception:
+                        pass
+                remaining = _sync.flush(con, cfg, timeout=30, reason="close",
+                                        control=state["sync_control"])
+                if remaining > 0:
+                    sync_text.value = f"{remaining} items remain, retry next start"
+                    _snack(page, f"Sync incomplete: {remaining} items will retry next start")
+                elif remaining == 0:
+                    sync_text.value = f"{brand.MOON_SYNCED} synced"
             try:
                 last = store.last_sync(con)
                 if last and last[6] and ("http 401" in last[6] or "http 403" in last[6]):

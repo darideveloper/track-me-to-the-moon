@@ -58,6 +58,17 @@ def sync_state(total_pending: int, last_error: str | None) -> str:
     return "synced"
 
 
+def paused_label(total_pending: int) -> str:
+    """Single paused-status string for the Flet header and tray title.
+
+    Kept distinct from the auth-pause "unauthorized" hint on purpose:
+    different cause, different remedy.
+    """
+    if total_pending > 0:
+        return f"\u23f8 paused \u00b7 {total_pending} pending"
+    return "\u23f8 paused"
+
+
 def header_moon(running: bool) -> str:
     return MOON_RECORDING if running else MOON_STOPPED
 
