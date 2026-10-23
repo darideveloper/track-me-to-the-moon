@@ -90,9 +90,56 @@ def _snack(page, message: str) -> None:
 
 def track_geometry() -> dict:
     """Scaled eclipse-toggle geometry; the knob always stays inside the track."""
-    tw, th, kn, pd = brand.px(280), brand.px(64), brand.px(56), brand.px(4)
+    tw, th, pd = brand.px(280), brand.px(42), brand.px(3)
+    kn = th - 2 * pd
     return {"track_w": tw, "track_h": th, "knob": kn, "pad": pd,
             "knob_left": pd, "knob_right": tw - kn - pd}
+
+
+def layout_metrics() -> dict:
+    """Vertical budget in current-scale px. Call after brand.set_scale().
+
+    Heights are measured from the rendered window; `core` must equal the
+    already-scaled sum, so it is never wrapped in px() a second time.
+    """
+    return {
+        "row": brand.px(66),     # one history row (title + subtitle, dense)
+        "sync": brand.px(16),    # pending/sync line + gap
+        "hint": brand.px(34),    # settings-incomplete warning + gap
+        "footer": brand.px(30),  # version footer + gap
+        "label": brand.px(50),   # divider + section label + gap
+        "core": brand.px(200),   # page padding + bare header + gap + track
+    }
+
+
+def default_height(m: dict) -> int:
+    """Window height for a resting 3-row layout (no settings hint)."""
+    return int(m["core"] + m["sync"] + m["footer"] + m["label"] + 3 * m["row"])
+
+
+def blocks_visible(h: float, hint_needed: bool = False, metrics=None) -> dict:
+    """Which blocks fit at window height `h` (whole rows only).
+
+    Shrinking eats the decorations first (sync line, then hint, then footer),
+    then the history label, then the rows themselves. Every condition keeps
+    one whole row alive, so the last thing to go is the history, and the
+    counter + switch core never moves.
+    """
+    m = metrics or layout_metrics()
+    row = m["row"]
+    avail = max(0.0, float(h) - m["core"])
+    sync = avail >= m["sync"] + row
+    avail -= m["sync"] if sync else 0
+    hint = hint_needed and avail >= m["hint"] + row
+    avail -= m["hint"] if hint else 0
+    footer = avail >= m["footer"] + row
+    avail -= m["footer"] if footer else 0
+    label = avail >= m["label"] + row
+    avail -= m["label"] if label else 0
+    rows = max(0, min(10, int(avail // row)))
+    return {"sync": sync, "hint": hint, "footer": footer,
+            "history_header": label and rows > 0, "history": rows > 0,
+            "rows": rows, "fill": avail - rows * row}
 
 
 def main(page: ft.Page, data_dir=None) -> None:
@@ -101,6 +148,7 @@ def main(page: ft.Page, data_dir=None) -> None:
     label = config.short_label(ddir) if dev else ""
     cfg = config.load()
     brand.set_scale(cfg.get("ui_scale", brand.UI_SCALE))
+    metrics = layout_metrics()
     con = store.connect(ddir / "tracker.db")
     state = {"running": False, "sid": None, "started_at": None,
              "sync_control": sync.SyncControl()}
@@ -117,24 +165,25 @@ def main(page: ft.Page, data_dir=None) -> None:
     page.padding = brand.px(10)
     if page.window is not None:
         page.window.width = brand.px(340)
-        page.window.height = brand.px(560)
+        page.window.height = default_height(metrics)
         page.window.resizable = True
+        page.window.min_height = metrics["core"]  # scaled: counter + switch floor
         try:
             page.window.icon = str(brand.asset_path(desktop_entry.platform_icon_name()))
         except Exception:
             pass  # ponytail: icon is decoration, never break startup
 
     # --- Night-sky header (always deep navy = brand anchor in both modes) ---
-    header_moon = ft.Text(brand.MOON_STOPPED, size=brand.fs(44), color=brand.MOON_WHITE,
+    header_moon = ft.Text(brand.MOON_STOPPED, size=brand.fs(30), color=brand.MOON_WHITE,
                           text_align=ft.TextAlign.CENTER)
     stars = ft.Text("✦   ·   ✦   ·   ✦", size=brand.fs(10), color=brand.NIGHT_STAR,
                     text_align=ft.TextAlign.CENTER)
-    timer_label = ft.Text("00:00:00", size=brand.fs(36), weight=ft.FontWeight.BOLD,
+    timer_label = ft.Text("00:00:00", size=brand.fs(27), weight=ft.FontWeight.BOLD,
                           color=brand.MOON_WHITE, font_family="monospace",
                           text_align=ft.TextAlign.CENTER)
-    status_dot = ft.Container(width=brand.px(12), height=brand.px(12),
-                              border_radius=brand.px(6), bgcolor=ft.Colors.GREY)
-    status_text = ft.Text("Stopped", color=brand.MOON_WHITE, size=brand.fs(13))
+    status_dot = ft.Container(width=brand.px(10), height=brand.px(10),
+                              border_radius=brand.px(5), bgcolor=ft.Colors.GREY)
+    status_text = ft.Text("Stopped", color=brand.MOON_WHITE, size=brand.fs(12))
     sync_text = ft.Text("", size=brand.fs(11), color=brand.DARK_MUTED,
                         text_align=ft.TextAlign.CENTER)
     sync_label = ft.Text("Sync on", size=brand.fs(11), color=brand.MOON_WHITE)
@@ -155,53 +204,66 @@ def main(page: ft.Page, data_dir=None) -> None:
                              **_hdr_icon)
     debug_btn = ft.IconButton(icon=ft.Icons.BUG_REPORT, tooltip="Debug: API log + manual send",
                               **_hdr_icon)
+    # Row 2: moon + timer + status share one line (was three stacked rows).
+    header_hero = ft.Row(
+        [header_moon, timer_label,
+         ft.Row([status_dot, status_text], spacing=brand.px(5),
+                alignment=ft.MainAxisAlignment.CENTER)],
+        alignment=ft.MainAxisAlignment.CENTER, spacing=brand.px(8),
+        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+    )
     header = ft.Container(
         bgcolor=brand.NIGHT_SKY, border_radius=brand.px(16), padding=brand.px(12),
         content=ft.Column([
             ft.Row([ft.Row([gear_btn, debug_btn], spacing=0), stars,
                     ft.Row([sync_btn, theme_btn], spacing=0)],
                    alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            header_moon,
-            timer_label,
-            ft.Row([status_dot, status_text],
-                   alignment=ft.MainAxisAlignment.CENTER),
+            header_hero,
             sync_text,
-        ], spacing=brand.px(4), horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=brand.px(3), horizontal_alignment=ft.CrossAxisAlignment.CENTER),
     )
 
     # --- Eclipse toggle (C): sliding moon knob on a pill track ---
     geo = track_geometry()
-    knob_label = ft.Text(brand.MOON_STOPPED, size=brand.fs(26), color=brand.MOON_WHITE,
+    knob_label = ft.Text(brand.MOON_STOPPED, size=brand.fs(22), color=brand.MOON_WHITE,
                           text_align=ft.TextAlign.CENTER)
     knob = ft.Container(width=geo["knob"], height=geo["knob"], left=geo["knob_left"],
                         top=geo["pad"], shape=ft.BoxShape.CIRCLE, bgcolor=ft.Colors.GREY_700,
                         alignment=ft.Alignment.CENTER, content=knob_label,
                         animate_position=300, ignore_interactions=True)
-    toggle_caption = ft.Text(brand.LAUNCH_LABEL, size=brand.fs(13),
+    toggle_caption = ft.Text(brand.LAUNCH_LABEL, size=brand.fs(11),
                              tooltip=brand.LAUNCH_TOOLTIP,
                              text_align=ft.TextAlign.CENTER)
-    track_label = ft.Container(alignment=ft.Alignment.CENTER,
-                               content=ft.Text("○ ────────── ●", size=brand.fs(10),
-                                               color=ft.Colors.GREY))
+    caption_box = ft.Container(alignment=ft.Alignment.CENTER, content=toggle_caption,
+                               ignore_interactions=True)
     track = ft.Container(width=geo["track_w"], height=geo["track_h"],
-                         border_radius=brand.px(32),
+                         border_radius=brand.px(24),
                          border=ft.Border.all(1, ft.Colors.OUTLINE),
-                         content=ft.Stack([track_label, knob]))
-    toggle_icon = ft.Icon(ft.Icons.FLIGHT_TAKEOFF, size=brand.px(16), color=ft.Colors.GREY)
+                         content=ft.Stack([caption_box, knob]))
 
     settings_hint = ft.Text("Settings incomplete — open ⚙ to finish setup.",
                             size=brand.fs(12), visible=False, color=ft.Colors.AMBER)
-    history = ft.ListView(expand=True, spacing=brand.px(4))
+    history_label = ft.Text("Last tracked times", size=brand.fs(14))
+    history_divider = ft.Divider()
+    history = ft.ListView(expand=False, spacing=brand.px(4))
     footer_text = version_footer_text() + (f" · {ddir}" if dev else "")
     version_footer = ft.Text(footer_text, size=brand.fs(10),
                              color=brand.DARK_MUTED,
                              text_align=ft.TextAlign.CENTER)
 
+    # Height-driven layout state: what the app wants vs what the window allows.
+    layout_state = {"hint": True, "hint_needed": False}
+
     def current_settings() -> dict:
         return store.get_settings_dict(con)
 
+    def set_hint(needed: bool) -> None:
+        """Show the warning only if it is needed AND the height leaves room."""
+        layout_state["hint_needed"] = bool(needed)
+        settings_hint.visible = bool(needed) and layout_state["hint"]
+
     def refresh_hint() -> None:
-        settings_hint.visible = bool(store.validate_settings(current_settings()))
+        set_hint(bool(store.validate_settings(current_settings())))
 
     def refresh_sync_status() -> None:
         """Pending count + last-sync status (reads ledger, no extra thread)."""
@@ -235,7 +297,6 @@ def main(page: ft.Page, data_dir=None) -> None:
         status_dot.bgcolor = brand.ACCENT_SKY if running else ft.Colors.GREY
         toggle_caption.value = brand.LAND_LABEL if running else brand.LAUNCH_LABEL
         toggle_caption.tooltip = brand.LAND_TOOLTIP if running else brand.LAUNCH_TOOLTIP
-        toggle_icon.name = ft.Icons.FLIGHT_LAND if running else ft.Icons.FLIGHT_TAKEOFF
 
     def refresh_sync_control() -> None:
         enabled = state["sync_control"].is_enabled()
@@ -691,8 +752,8 @@ def main(page: ft.Page, data_dir=None) -> None:
             try:
                 last = store.last_sync(con)
                 if last and last[6] and ("http 401" in last[6] or "http 403" in last[6]):
-                    settings_hint.visible = True
                     settings_hint.value = "Sync unauthorized — check settings (⚙)."
+                    set_hint(True)
             except Exception:
                 pass
             try:
@@ -709,18 +770,17 @@ def main(page: ft.Page, data_dir=None) -> None:
     page.on_close = on_close
     home_view.controls = [
         header,
-        ft.Row([toggle_icon, toggle_caption],
-               alignment=ft.MainAxisAlignment.CENTER),
         track,
         settings_hint,
-        ft.Divider(),
-        ft.Text("Last tracked times", size=brand.fs(14)),
+        history_divider,
+        history_label,
         history,
         version_footer,
     ]
     home_view.horizontal_alignment = ft.CrossAxisAlignment.CENTER
     home_view.scroll = ft.ScrollMode.ADAPTIVE
     home_view.expand = True
+    home_view.spacing = brand.px(6)
     settings_view.controls = [
         ft.Row([back_btn, ft.Text("Settings", size=brand.fs(14), weight=ft.FontWeight.BOLD)],
                alignment=ft.MainAxisAlignment.START),
@@ -766,10 +826,47 @@ def main(page: ft.Page, data_dir=None) -> None:
     debug_view.scroll = ft.ScrollMode.ADAPTIVE
     debug_view.expand = True
     page.add(home_view, settings_view, debug_view)
+
+    def apply_layout(h: float) -> None:
+        """Show/hide optional blocks so the counter+switch core always fits.
+
+        Only flips `.visible` (and trims history rows on change); controls are
+        never rebuilt, so this is safe to run on every resize frame.
+        """
+        try:
+            h = float(h or 0)
+        except (TypeError, ValueError):
+            h = 0.0
+        if h < 100:
+            h = default_height(metrics)  # first frame reports 0; assume the default
+        b = blocks_visible(h, layout_state["hint_needed"], metrics)
+        sync_text.visible = b["sync"]
+        layout_state["hint"] = b["hint"]
+        settings_hint.visible = layout_state["hint_needed"] and b["hint"]
+        version_footer.visible = b["footer"]
+        history_divider.visible = b["history_header"]
+        history_label.visible = b["history_header"]
+        history.visible = b["history"]
+        # Absorb the remainder so the window never ends in a visible gap, but
+        # only when it shows an essentially complete extra row — a two-thirds
+        # slice of a row cut by the footer reads as a layout bug. Clamp to the
+        # rows that exist.
+        grow = b["fill"] if b["fill"] >= metrics["row"] * 0.75 else 0
+        present = max(1, len(history.controls))
+        history.height = min(b["rows"] * metrics["row"] + grow,
+                             present * metrics["row"])
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    page.on_resize = lambda e: apply_layout(e.height)
+
     refresh_header()
     refresh_sync_control()
     refresh_hint()
     refresh_history()
+    apply_layout(page.height)
     ticker_task = page.run_task(ticker)
 
 
