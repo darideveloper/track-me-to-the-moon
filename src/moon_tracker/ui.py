@@ -88,10 +88,11 @@ def _snack(page, message: str) -> None:
         pass
 
 
-# Eclipse toggle geometry (C×D pill).
-_TRACK_W, _TRACK_H, _KNOB, _PAD = 280, 64, 56, 4
-_KNOB_LEFT = _PAD
-_KNOB_RIGHT = _TRACK_W - _KNOB - _PAD
+def track_geometry() -> dict:
+    """Scaled eclipse-toggle geometry; the knob always stays inside the track."""
+    tw, th, kn, pd = brand.px(280), brand.px(64), brand.px(56), brand.px(4)
+    return {"track_w": tw, "track_h": th, "knob": kn, "pad": pd,
+            "knob_left": pd, "knob_right": tw - kn - pd}
 
 
 def main(page: ft.Page, data_dir=None) -> None:
@@ -99,6 +100,7 @@ def main(page: ft.Page, data_dir=None) -> None:
     dev = not config.is_default_dir(ddir)
     label = config.short_label(ddir) if dev else ""
     cfg = config.load()
+    brand.set_scale(cfg.get("ui_scale", brand.UI_SCALE))
     con = store.connect(ddir / "tracker.db")
     state = {"running": False, "sid": None, "started_at": None,
              "sync_control": sync.SyncControl()}
@@ -112,9 +114,10 @@ def main(page: ft.Page, data_dir=None) -> None:
     page.title = brand.DISPLAY_NAME + (f" [🧪 {label}]" if dev else "")
     page.theme, page.dark_theme = brand.page_themes()
     page.theme_mode = ft.ThemeMode.SYSTEM
+    page.padding = brand.px(10)
     if page.window is not None:
-        page.window.width = 340
-        page.window.height = 560
+        page.window.width = brand.px(340)
+        page.window.height = brand.px(560)
         page.window.resizable = True
         try:
             page.window.icon = str(brand.asset_path(desktop_entry.platform_icon_name()))
@@ -122,27 +125,38 @@ def main(page: ft.Page, data_dir=None) -> None:
             pass  # ponytail: icon is decoration, never break startup
 
     # --- Night-sky header (always deep navy = brand anchor in both modes) ---
-    header_moon = ft.Text(brand.MOON_STOPPED, size=44, color=brand.MOON_WHITE,
+    header_moon = ft.Text(brand.MOON_STOPPED, size=brand.fs(44), color=brand.MOON_WHITE,
                           text_align=ft.TextAlign.CENTER)
-    stars = ft.Text("✦   ·   ✦   ·   ✦", size=10, color=brand.NIGHT_STAR,
+    stars = ft.Text("✦   ·   ✦   ·   ✦", size=brand.fs(10), color=brand.NIGHT_STAR,
                     text_align=ft.TextAlign.CENTER)
-    timer_label = ft.Text("00:00:00", size=36, weight=ft.FontWeight.BOLD,
+    timer_label = ft.Text("00:00:00", size=brand.fs(36), weight=ft.FontWeight.BOLD,
                           color=brand.MOON_WHITE, font_family="monospace",
                           text_align=ft.TextAlign.CENTER)
-    status_dot = ft.Container(width=12, height=12, border_radius=6, bgcolor=ft.Colors.GREY)
-    status_text = ft.Text("Stopped", color=brand.MOON_WHITE, size=13)
-    sync_text = ft.Text("", size=11, color=brand.DARK_MUTED, text_align=ft.TextAlign.CENTER)
-    sync_label = ft.Text("Sync on", size=11, color=brand.MOON_WHITE)
-    sync_btn = ft.Container(content=sync_label, padding=ft.Padding.symmetric(horizontal=7, vertical=3),
-                            border_radius=8, bgcolor=brand.ACCENT_SKY)
+    status_dot = ft.Container(width=brand.px(12), height=brand.px(12),
+                              border_radius=brand.px(6), bgcolor=ft.Colors.GREY)
+    status_text = ft.Text("Stopped", color=brand.MOON_WHITE, size=brand.fs(13))
+    sync_text = ft.Text("", size=brand.fs(11), color=brand.DARK_MUTED,
+                        text_align=ft.TextAlign.CENTER)
+    sync_label = ft.Text("Sync on", size=brand.fs(11), color=brand.MOON_WHITE)
+    sync_btn = ft.Container(content=sync_label,
+                            padding=ft.Padding.symmetric(horizontal=brand.px(7), vertical=brand.px(3)),
+                            border_radius=brand.px(8), bgcolor=brand.ACCENT_SKY)
+    _hdr_icon = dict(
+        icon_color=brand.MOON_WHITE,
+        icon_size=brand.px(18),
+        style=ft.ButtonStyle(padding=brand.px(4)),
+        size_constraints=ft.BoxConstraints(
+            min_width=brand.px(30), min_height=brand.px(30),
+            max_width=brand.px(34), max_height=brand.px(34)),
+    )
     theme_btn = ft.IconButton(icon=ft.Icons.DARK_MODE, tooltip="Toggle light / dark",
-                              icon_color=brand.MOON_WHITE)
+                              **_hdr_icon)
     gear_btn = ft.IconButton(icon=ft.Icons.SETTINGS, tooltip="Settings",
-                             icon_color=brand.MOON_WHITE)
+                             **_hdr_icon)
     debug_btn = ft.IconButton(icon=ft.Icons.BUG_REPORT, tooltip="Debug: API log + manual send",
-                              icon_color=brand.MOON_WHITE)
+                              **_hdr_icon)
     header = ft.Container(
-        bgcolor=brand.NIGHT_SKY, border_radius=16, padding=12,
+        bgcolor=brand.NIGHT_SKY, border_radius=brand.px(16), padding=brand.px(12),
         content=ft.Column([
             ft.Row([ft.Row([gear_btn, debug_btn], spacing=0), stars,
                     ft.Row([sync_btn, theme_btn], spacing=0)],
@@ -152,31 +166,34 @@ def main(page: ft.Page, data_dir=None) -> None:
             ft.Row([status_dot, status_text],
                    alignment=ft.MainAxisAlignment.CENTER),
             sync_text,
-        ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+        ], spacing=brand.px(4), horizontal_alignment=ft.CrossAxisAlignment.CENTER),
     )
 
     # --- Eclipse toggle (C): sliding moon knob on a pill track ---
-    knob_label = ft.Text(brand.MOON_STOPPED, size=26, color=brand.MOON_WHITE,
+    geo = track_geometry()
+    knob_label = ft.Text(brand.MOON_STOPPED, size=brand.fs(26), color=brand.MOON_WHITE,
                           text_align=ft.TextAlign.CENTER)
-    knob = ft.Container(width=_KNOB, height=_KNOB, left=_KNOB_LEFT, top=_PAD,
-                        shape=ft.BoxShape.CIRCLE, bgcolor=ft.Colors.GREY_700,
+    knob = ft.Container(width=geo["knob"], height=geo["knob"], left=geo["knob_left"],
+                        top=geo["pad"], shape=ft.BoxShape.CIRCLE, bgcolor=ft.Colors.GREY_700,
                         alignment=ft.Alignment.CENTER, content=knob_label,
                         animate_position=300, ignore_interactions=True)
-    toggle_caption = ft.Text(brand.LAUNCH_LABEL, size=13, tooltip=brand.LAUNCH_TOOLTIP,
+    toggle_caption = ft.Text(brand.LAUNCH_LABEL, size=brand.fs(13),
+                             tooltip=brand.LAUNCH_TOOLTIP,
                              text_align=ft.TextAlign.CENTER)
     track_label = ft.Container(alignment=ft.Alignment.CENTER,
-                               content=ft.Text("○ ────────── ●", size=10,
+                               content=ft.Text("○ ────────── ●", size=brand.fs(10),
                                                color=ft.Colors.GREY))
-    track = ft.Container(width=_TRACK_W, height=_TRACK_H, border_radius=32,
+    track = ft.Container(width=geo["track_w"], height=geo["track_h"],
+                         border_radius=brand.px(32),
                          border=ft.Border.all(1, ft.Colors.OUTLINE),
                          content=ft.Stack([track_label, knob]))
-    toggle_icon = ft.Icon(ft.Icons.FLIGHT_TAKEOFF, size=16, color=ft.Colors.GREY)
+    toggle_icon = ft.Icon(ft.Icons.FLIGHT_TAKEOFF, size=brand.px(16), color=ft.Colors.GREY)
 
     settings_hint = ft.Text("Settings incomplete — open ⚙ to finish setup.",
-                            size=12, visible=False, color=ft.Colors.AMBER)
-    history = ft.ListView(expand=True, spacing=4)
+                            size=brand.fs(12), visible=False, color=ft.Colors.AMBER)
+    history = ft.ListView(expand=True, spacing=brand.px(4))
     footer_text = version_footer_text() + (f" · {ddir}" if dev else "")
-    version_footer = ft.Text(footer_text, size=10,
+    version_footer = ft.Text(footer_text, size=brand.fs(10),
                              color=brand.DARK_MUTED,
                              text_align=ft.TextAlign.CENTER)
 
@@ -212,7 +229,7 @@ def main(page: ft.Page, data_dir=None) -> None:
         running = state["running"]
         header_moon.value = brand.header_moon(running)
         knob_label.value = brand.header_moon(running)
-        knob.left = _KNOB_RIGHT if running else _KNOB_LEFT
+        knob.left = geo["knob_right"] if running else geo["knob_left"]
         knob.bgcolor = brand.ACCENT_SKY if running else ft.Colors.GREY_700
         status_text.value = "● Recording" if running else "Stopped"
         status_dot.bgcolor = brand.ACCENT_SKY if running else ft.Colors.GREY
@@ -239,11 +256,25 @@ def main(page: ft.Page, data_dir=None) -> None:
     user_field = ft.TextField(label="Employee ID", dense=True)
     token_field = ft.TextField(label="API token", password=True,
                                can_reveal_password=False, dense=True)
+    _SCALE_KEYS = ("70", "75", "80", "85", "90", "100")
+    scale_dd = ft.Dropdown(dense=True, text_size=brand.fs(14), label="UI scale",
+                           options=[ft.DropdownOption(key=k, text=f"{k}%")
+                                    for k in _SCALE_KEYS])
+    scale_hint = ft.Text("Applies after restart", size=brand.fs(11),
+                         color=brand.DARK_MUTED)
     token_change_btn = ft.OutlinedButton("Change")
     save_btn = ft.FilledButton("Save")
     back_btn = ft.TextButton("‹ Back")
-    settings_msg = ft.Text("", size=12)
+    settings_msg = ft.Text("", size=brand.fs(12))
     token_state = {"editing": True}
+
+    def scale_pct() -> str:
+        """Stored scale as a dropdown key, snapped to the nearest preset."""
+        try:
+            raw = int(round(float(cfg.get("ui_scale", brand.UI_SCALE)) * 100))
+        except (TypeError, ValueError):
+            raw = round(brand.UI_SCALE * 100)
+        return min(_SCALE_KEYS, key=lambda k: abs(int(k) - raw))
 
     def refresh_settings() -> None:
         s = current_settings()
@@ -252,6 +283,7 @@ def main(page: ft.Page, data_dir=None) -> None:
         user_field.value = s["user_id"]
         user_field.error_text = None
         token_field.error_text = None
+        scale_dd.value = scale_pct()
         if s["api_token"]:
             token_state["editing"] = False
             token_field.value = "•" * 8
@@ -311,9 +343,20 @@ def main(page: ft.Page, data_dir=None) -> None:
         store.set_setting(con, "user_id", user)
         if token_state["editing"]:
             store.set_setting(con, "api_token", token)
+        new_scale = int(scale_dd.value or "75") / 100
+        scale_changed = new_scale != cfg.get("ui_scale")
+        if scale_changed:
+            try:
+                config.save({**cfg, "ui_scale": new_scale})
+                cfg["ui_scale"] = new_scale
+            except Exception:
+                settings_msg.value = "Scale not saved (config write failed)."
+                page.update()
+                return
         refresh_settings()
         refresh_hint()
-        settings_msg.value = "Saved ✓"
+        settings_msg.value = ("Saved ✓ — restart to apply the new size"
+                              if scale_changed else "Saved ✓")
         page.update()
 
     gear_btn.on_click = show_settings
@@ -333,9 +376,9 @@ def main(page: ft.Page, data_dir=None) -> None:
     theme_btn.on_click = on_theme_toggle
 
     # --- Debug view: manual actions + live API log (session-only ring) ---
-    debug_log = ft.ListView(expand=True, spacing=2)
-    debug_msg = ft.Text("", size=12)
-    debug_count = ft.Text("", size=11, color=brand.DARK_MUTED)
+    debug_log = ft.ListView(expand=True, spacing=brand.px(2))
+    debug_msg = ft.Text("", size=brand.fs(12))
+    debug_count = ft.Text("", size=brand.fs(11), color=brand.DARK_MUTED)
     debug_bundle_field = ft.TextField(label="Debug bundle (copy manually if clipboard fails)",
                                       multiline=True, read_only=True, visible=False,
                                       min_lines=4, max_lines=8, dense=True)
@@ -382,14 +425,14 @@ def main(page: ft.Page, data_dir=None) -> None:
             res = str(getattr(e, "res_preview", "") or "")
             details = []
             if req:
-                details.append(ft.Text(f"req: {req}", size=10, selectable=True))
+                details.append(ft.Text(f"req: {req}", size=brand.fs(10), selectable=True))
             if res:
-                details.append(ft.Text(f"res: {res}", size=10, selectable=True))
+                details.append(ft.Text(f"res: {res}", size=brand.fs(10), selectable=True))
             if not details:
-                details.append(ft.Text("no payload", size=10))
+                details.append(ft.Text("no payload", size=brand.fs(10)))
             dot = "🟢" if getattr(e, "ok", False) else ("⚪" if getattr(e, "status", None) is None else "🔴")
             debug_log.controls.append(ft.ExpansionTile(
-                title=ft.Text(f"{dot} {title}", size=11),
+                title=ft.Text(f"{dot} {title}", size=brand.fs(11)),
                 controls=details, dense=True))
         show_more_btn.visible = len(events) > 60 and not debug_show_all["on"]
         if debug_result["msg"] is not None:
@@ -529,16 +572,18 @@ def main(page: ft.Page, data_dir=None) -> None:
             any_pending = False
         if not rows:
             history.controls.append(ft.Text("No sessions yet — tap the moon to launch 🚀",
-                                           size=13, text_align=ft.TextAlign.CENTER))
+                                           size=brand.fs(13), text_align=ft.TextAlign.CENTER))
         for row in rows:
             _sid, started_at, ended_at = row[0], row[1], row[2]
             uploaded = row[3] if len(row) > 3 else None
             title, subtitle = format_session_row(started_at, ended_at)
             glyph = brand.row_moon(bool(uploaded) if uploaded is not None else None,
                                    any_pending)
-            history.controls.append(ft.ListTile(leading=ft.Text(glyph, size=20),
-                                                title=ft.Text(title),
-                                                subtitle=ft.Text(subtitle), dense=True))
+            history.controls.append(ft.ListTile(
+                leading=ft.Text(glyph, size=brand.fs(20)),
+                title=ft.Text(title, size=brand.fs(14)),
+                subtitle=ft.Text(subtitle, size=brand.fs(12)),
+                dense=True, min_height=brand.px(48)))
         refresh_hint()
         refresh_sync_status()
         refresh_header()
@@ -669,7 +714,7 @@ def main(page: ft.Page, data_dir=None) -> None:
         track,
         settings_hint,
         ft.Divider(),
-        ft.Text("Last tracked times"),
+        ft.Text("Last tracked times", size=brand.fs(14)),
         history,
         version_footer,
     ]
@@ -677,27 +722,28 @@ def main(page: ft.Page, data_dir=None) -> None:
     home_view.scroll = ft.ScrollMode.ADAPTIVE
     home_view.expand = True
     settings_view.controls = [
-        ft.Row([back_btn, ft.Text("Settings", weight=ft.FontWeight.BOLD)],
+        ft.Row([back_btn, ft.Text("Settings", size=brand.fs(14), weight=ft.FontWeight.BOLD)],
                alignment=ft.MainAxisAlignment.START),
         ft.Card(content=ft.Container(
-            padding=12,
-            content=ft.Column([base_field, user_field, token_field,
+            padding=brand.px(12),
+            content=ft.Column([base_field, user_field, token_field, scale_dd,
+                               scale_hint,
                                ft.Row([token_change_btn],
                                       alignment=ft.MainAxisAlignment.END),
                                ft.Row([save_btn],
                                       alignment=ft.MainAxisAlignment.CENTER),
-                               settings_msg], spacing=8),
+                               settings_msg], spacing=brand.px(8)),
         )),
     ]
     settings_view.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
     settings_view.scroll = ft.ScrollMode.ADAPTIVE
     settings_view.expand = True
     debug_view.controls = [
-        ft.Row([debug_back_btn, ft.Text("Debug: API + manual send",
+        ft.Row([debug_back_btn, ft.Text("Debug: API + manual send", size=brand.fs(14),
                                         weight=ft.FontWeight.BOLD)],
                alignment=ft.MainAxisAlignment.START),
         ft.Card(content=ft.Container(
-            padding=12,
+            padding=brand.px(12),
             content=ft.Column([
                 ft.Row([shot_btn, ping_btn],
                        alignment=ft.MainAxisAlignment.CENTER),
@@ -706,7 +752,7 @@ def main(page: ft.Page, data_dir=None) -> None:
                 ft.Row([shots_btn, send_all_btn],
                        alignment=ft.MainAxisAlignment.CENTER),
                 debug_msg,
-            ], spacing=8),
+            ], spacing=brand.px(8)),
         )),
         ft.Row([debug_count,
                 ft.Row([copy_btn, clear_btn],

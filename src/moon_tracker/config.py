@@ -11,6 +11,7 @@ DEFAULTS = {
     "screenshot_interval_sec": 900,
     "poll_interval_sec": 360,
     "idle_after_sec": 180,
+    "ui_scale": 0.75,
 }
 
 # Previous defaults (pre reduce-capture-rates): migrated to new DEFAULTS on
@@ -81,14 +82,20 @@ def short_label(p: str | Path) -> str:
     except Exception:
         return str(p)
 
+def save(cfg: dict) -> None:
+    """Write the whole config, same format `load()` has always produced."""
+    p = config_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
+        for k, v in cfg.items():
+            f.write(f'{k} = {v!r}\n'.replace("'", '"') if isinstance(v, str) else f"{k} = {v}\n")
+
+
 def load() -> dict:
     cfg = dict(DEFAULTS)
     p = config_path()
     if not p.exists():
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "w") as f:
-            for k, v in DEFAULTS.items():
-                f.write(f'{k} = {v!r}\n'.replace("'", '"') if isinstance(v, str) else f"{k} = {v}\n")
+        save(DEFAULTS)
         return cfg
     try:
         import tomllib
@@ -103,9 +110,7 @@ def load() -> dict:
             migrated = True
     if migrated:
         try:
-            with open(p, "w") as f:
-                for k, v in cfg.items():
-                    f.write(f'{k} = {v!r}\n'.replace("'", '"') if isinstance(v, str) else f"{k} = {v}\n")
+            save(cfg)
         except Exception:
             pass  # ponytail: rewrite failure never blocks startup; retried next start
     return cfg

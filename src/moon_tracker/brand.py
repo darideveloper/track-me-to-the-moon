@@ -33,6 +33,29 @@ MOON_RECORDING = "\U0001F315"  # 🌕 full moon
 MOON_SYNCED = MOON_RECORDING
 MOON_PENDING = MOON_STOPPED
 
+# UI scale: 1.0 = original 340x560 design. 0.75 = 75% of the original size.
+UI_SCALE = 0.75
+
+
+def px(v: float) -> int:
+    """Scaled box/padding/radius/icon size."""
+    return max(1, int(v * UI_SCALE + 0.5))
+
+
+def fs(v: float) -> int:
+    """Scaled font size, floored so muted labels stay legible."""
+    return max(9, int(v * UI_SCALE + 0.5))
+
+
+def set_scale(v) -> None:
+    """Clamp to 0.6-1.2 and set the process-wide scale; junk keeps current."""
+    global UI_SCALE
+    try:
+        UI_SCALE = min(1.2, max(0.6, float(v)))
+    except (TypeError, ValueError):
+        pass
+
+
 LAUNCH_LABEL = "Tap to Launch"
 LAND_LABEL = "Tap to Land"
 LAUNCH_TOOLTIP = "Start tracking"
@@ -106,9 +129,29 @@ def tray_title(stopped: bool, total_pending: int, synced: bool, suffix: str = ""
 
 
 def page_themes():
-    """Return (light_theme, dark_theme) for Lunar Minimal + Paper Moon."""
+    """Return (light_theme, dark_theme) for Lunar Minimal + Paper Moon.
+
+    Sizes are scaled by `UI_SCALE` for Material widgets that don't take an
+    explicit size (button labels, field labels). Plain `ft.Text` keeps its
+    default colors from the color scheme — overriding `text_theme` here made
+    default-colored text render white — so those sizes are set per control.
+    """
     import flet as ft
 
-    light = ft.Theme(color_scheme_seed=ACCENT_SKY)
-    dark = ft.Theme(color_scheme_seed=ACCENT_SKY)
-    return light, dark
+    button_style = ft.ButtonStyle(
+        text_style=ft.TextStyle(size=fs(14)),
+        padding=ft.Padding.symmetric(horizontal=px(10), vertical=px(6)),
+        icon_size=px(18),
+        visual_density=ft.VisualDensity.COMPACT,
+    )
+
+    def theme() -> "ft.Theme":
+        return ft.Theme(
+            color_scheme_seed=ACCENT_SKY,
+            text_button_theme=ft.TextButtonTheme(style=button_style),
+            outlined_button_theme=ft.OutlinedButtonTheme(style=button_style),
+            filled_button_theme=ft.FilledButtonTheme(style=button_style),
+            icon_button_theme=ft.IconButtonTheme(style=button_style),
+        )
+
+    return theme(), theme()

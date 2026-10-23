@@ -71,3 +71,25 @@ def test_defaults_dict_is_sparse():
     assert config.DEFAULTS["idle_after_sec"] == 180
     assert 3600 / config.DEFAULTS["poll_interval_sec"] == 10
     assert 3600 / config.DEFAULTS["screenshot_interval_sec"] == 4
+
+
+def test_ui_scale_default_and_round_trip(monkeypatch, tmp_path):
+    from moon_tracker import brand
+
+    _isolate(monkeypatch, tmp_path)
+    assert config.load()["ui_scale"] == 0.75
+    cfg = config.load()
+    cfg["ui_scale"] = 0.85
+    config.save(cfg)
+    assert config.load()["ui_scale"] == 0.85
+
+    default = brand.UI_SCALE
+    try:
+        brand.set_scale(5)
+        assert brand.UI_SCALE == 1.2
+        brand.set_scale(0.1)
+        assert brand.UI_SCALE == 0.6
+        brand.set_scale("big")  # junk keeps the current scale
+        assert brand.UI_SCALE == 0.6
+    finally:
+        brand.set_scale(default)

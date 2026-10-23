@@ -4,6 +4,16 @@ import threading
 from moon_tracker import ui
 
 
+def test_track_geometry_keeps_knob_inside_track():
+    from moon_tracker import brand
+
+    geo = ui.track_geometry()
+    assert geo["knob_left"] == geo["pad"]
+    assert geo["knob_right"] + geo["knob"] + geo["pad"] == geo["track_w"]
+    assert geo["knob"] < geo["track_h"]
+    assert geo["track_w"] <= brand.px(340)
+
+
 def test_format_hms():
     assert ui.format_hms(0) == "00:00:00"
     assert ui.format_hms(3) == "00:00:03"
